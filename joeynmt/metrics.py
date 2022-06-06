@@ -7,6 +7,7 @@ from inspect import getfullargspec
 from typing import List
 
 from sacrebleu.metrics import BLEU, CHRF
+import editdistance
 
 logger = logging.getLogger(__name__)
 
@@ -98,3 +99,27 @@ def sequence_accuracy(hypotheses: List[str], references: List[str]) -> float:
     correct_sequences = sum(
         [1 for (hyp, ref) in zip(hypotheses, references) if hyp == ref])
     return (correct_sequences / len(hypotheses)) * 100 if hypotheses else 0.0
+
+
+def wer(hypotheses, references, tokenizer):
+    """
+    Compute word error rate in corpus-level
+
+    :param hypotheses: list of hypotheses (strings)
+    :param references: list of references (strings)
+    :param tokenizer: tokenize function (callable)
+    :return: normalized word error rate
+    """
+    numerator = 0.0
+    denominator = 0.0
+    # sentence-level wer
+    #for hyp, ref in zip(hypotheses, references):
+    #    wer = editdistance.eval(tokenizer(hyp),
+    #                            tokenizer(ref)) / len(tokenizer(ref))
+    #    numerator += max(wer, 1.0) # can be `wer > 1` if `len(hyp) > len(ref)`
+    #    denominator += 1.0
+    # corpus-level wer
+    for hyp, ref in zip(hypotheses, references):
+        numerator += editdistance.eval(tokenizer(hyp), tokenizer(ref))
+        denominator += len(tokenizer(ref))
+    return (numerator / denominator) * 100 if denominator else 0.0

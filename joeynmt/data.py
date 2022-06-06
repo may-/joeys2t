@@ -4,7 +4,7 @@ Data module
 """
 import logging
 from functools import partial
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 from torch.utils.data import (
@@ -16,10 +16,11 @@ from torch.utils.data import (
     SequentialSampler,
 )
 
-from joeynmt.batch import Batch
+from joeynmt.batch import Batch, SpeechBatch
 from joeynmt.constants import PAD_ID
 from joeynmt.datasets import build_dataset
 from joeynmt.helpers import log_data_info
+from joeynmt.helpers_for_audio import pad_features
 from joeynmt.tokenizers import build_tokenizer
 from joeynmt.vocabulary import Vocabulary, build_vocab
 
@@ -55,6 +56,10 @@ def load_data(
     """
     if datasets is None:
         datasets = ["train", "dev", "test"]
+
+    task = data_cfg["task"].upper()
+    assert task in ["MT", "S2T"]
+
     src_cfg = data_cfg["src"]
     trg_cfg = data_cfg["trg"]
 
@@ -72,7 +77,9 @@ def load_data(
     logger.info("Building tokenizer...")
     tokenizer = build_tokenizer(data_cfg)
 
-    dataset_type = data_cfg.get("dataset_type", "plain")
+    dataset_type = data_cfg.get("dataset_type", "plain").lower()
+    if task == "S2T":
+        assert dataset_type == "speech"
     dataset_cfg = data_cfg.get("dataset_cfg", {})
 
     # train data
@@ -87,6 +94,7 @@ def load_data(
             split="train",
             tokenizer=tokenizer,
             random_subset=data_cfg.get("random_train_subset", -1),
+            task=task,
             **dataset_cfg,
         )
 
@@ -95,14 +103,25 @@ def load_data(
     src_vocab, trg_vocab = build_vocab(data_cfg, dataset=train_data)
 
     # set vocab to tokenizer
-    tokenizer[src_lang].set_vocab(src_vocab._itos)  # pylint: disable=protected-access
-    tokenizer[trg_lang].set_vocab(trg_vocab._itos)  # pylint: disable=protected-access
+    # pylint: disable=protected-access
+    if task == "MT":
+        tokenizer[src_lang].set_vocab(src_vocab._itos)
+        tokenizer[trg_lang].set_vocab(trg_vocab._itos)
+    elif task == "S2T":
+        tokenizer["trg"].set_vocab(trg_vocab._itos)
+    # pylint: enable=protected-access
 
     # encoding func
-    sequence_encoder = {
-        src_lang: partial(src_vocab.sentences_to_ids, bos=False, eos=True),
-        trg_lang: partial(trg_vocab.sentences_to_ids, bos=True, eos=True),
-    }
+    if task == "MT":
+        sequence_encoder = {
+            src_lang: partial(src_vocab.sentences_to_ids, bos=False, eos=True),
+            trg_lang: partial(trg_vocab.sentences_to_ids, bos=True, eos=True),
+        }
+    elif task == "S2T":
+        sequence_encoder = {
+            "src": partial(pad_features, embed_size=tokenizer["src"].num_freq),
+            "trg": partial(trg_vocab.sentences_to_ids, bos=True, eos=True),
+        }
     if train_data is not None:
         train_data.sequence_encoder = sequence_encoder
 
@@ -119,6 +138,7 @@ def load_data(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=data_cfg.get("random_dev_subset", -1),
+            task=task,
             **dataset_cfg,
         )
 
@@ -135,6 +155,7 @@ def load_data(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=-1,  # no subsampling for test
+            task=task,
             **dataset_cfg,
         )
     logger.info("Data loaded.")
@@ -150,7 +171,8 @@ def collate_fn(
     device: torch.device = CPU_DEVICE,
     has_trg: bool = True,
     is_train: bool = True,
-) -> Batch:
+    **kwargs,
+) -> Union[Batch, SpeechBatch]:
     """
     Custom collate function.
     See https://pytorch.org/docs/stable/data.html#dataloader-collate-fn for details.
@@ -187,16 +209,30 @@ def collate_fn(
     else:
         assert all(t is None for t in trg_list)
         trg, trg_length = None, None
-    return Batch(
-        src=torch.tensor(src).long(),
-        src_length=torch.tensor(src_length).long(),
-        trg=torch.tensor(trg).long() if trg else None,
-        trg_length=torch.tensor(trg_length).long() if trg_length else None,
-        device=device,
-        pad_index=pad_index,
-        has_trg=has_trg,
-        is_train=is_train,
-    )
+
+    task = kwargs.get("task", "MT")
+    if task == "MT":
+        return Batch(
+            src=torch.tensor(src).long(),
+            src_length=torch.tensor(src_length).long(),
+            trg=torch.tensor(trg).long() if trg else None,
+            trg_length=torch.tensor(trg_length).long() if trg_length else None,
+            device=device,
+            pad_index=pad_index,
+            has_trg=has_trg,
+            is_train=is_train,
+        )
+    elif task == "S2T":
+        return SpeechBatch(
+            src=torch.tensor(src).float(),
+            src_length=torch.tensor(src_length).long(),
+            trg=torch.tensor(trg).long() if trg else None,
+            trg_length=torch.tensor(trg_length).long() if trg_length else None,
+            device=device,
+            pad_index=pad_index,
+            has_trg=has_trg,
+            is_train=is_train,
+        )
 
 
 def make_data_iter(
@@ -261,6 +297,7 @@ def make_data_iter(
             device=device,
             has_trg=dataset.has_trg,
             is_train=dataset.split == "train",
+            task=dataset.task,
         ),
         num_workers=num_workers,
     )

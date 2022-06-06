@@ -22,8 +22,10 @@ import torch
 import yaml
 from torch import Tensor, nn
 from torch.multiprocessing import cpu_count
+from torch.nn.functional import pad as _pad
 from torch.utils.tensorboard import SummaryWriter
 
+from joeynmt.constants import PAD_ID
 from joeynmt.plotting import plot_heatmap
 
 if TYPE_CHECKING:
@@ -168,16 +170,18 @@ def log_data_info(
     logger.info(" Test dataset: %s", test_data)
 
     if train_data:
-        src = "\n\t[SRC] " + " ".join(
+        src = "" if src_vocab is None else "\n\t[SRC] " + " ".join(
             train_data.get_item(idx=0, lang=train_data.src_lang, is_train=False))
         trg = "\n\t[TRG] " + " ".join(
             train_data.get_item(idx=0, lang=train_data.trg_lang, is_train=False))
         logger.info("First training example:%s%s", src, trg)
 
-    logger.info("First 10 Src tokens: %s", src_vocab.log_vocab(10))
+    if src_vocab is None is not None:
+        logger.info("First 10 Src tokens: %s", src_vocab.log_vocab(10))
     logger.info("First 10 Trg tokens: %s", trg_vocab.log_vocab(10))
 
-    logger.info("Number of unique Src tokens (vocab_size): %d", len(src_vocab))
+    if src_vocab is None is not None:
+        logger.info("Number of unique Src tokens (vocab_size): %d", len(src_vocab))
     logger.info("Number of unique Trg tokens (vocab_size): %d", len(trg_vocab))
 
 
@@ -262,9 +266,12 @@ def parse_train_args(cfg: Dict, mode: str = "training") -> Tuple:
 
     # objective
     loss_type: str = cfg.get("loss", "crossentropy")
+    if loss_type not in ["crossentropy", "crossentropy-ctc"]:
+        raise ConfigurationError(
+            "Invalid `loss` type. Valid option: {`crossentropy`, `crossentropy-ctc`}.")
+    ctc_weight: float = cfg.get("ctc_weight", 0.0)
+    assert 0.0 <= ctc_weight <= 1.0, ctc_weight
     label_smoothing: float = cfg.get("label_smoothing", 0.0)
-    if loss_type not in ["crossentropy"]:
-        raise ConfigurationError("Invalid `loss` type. Valid option: {`crossentropy`}.")
 
     # minimum learning rate for early stopping
     learning_rate_min: float = cfg.get("learning_rate_min", 1.0e-8)
@@ -284,10 +291,10 @@ def parse_train_args(cfg: Dict, mode: str = "training") -> Tuple:
 
     # early stopping
     early_stopping_metric: str = cfg.get("early_stopping_metric", "ppl").lower()
-    if early_stopping_metric not in ["acc", "loss", "ppl", "bleu", "chrf"]:
+    if early_stopping_metric not in ["acc", "loss", "ppl", "bleu", "chrf", "wer"]:
         raise ConfigurationError(
             "Invalid setting for `early_stopping_metric`. "
-            "Valid options: {`acc`, `loss`, `ppl`, `bleu`, `chrf`}.")
+            "Valid options: {`acc`, `loss`, `ppl`, `bleu`, `chrf`, `wer`}.")
 
     # data & batch handling
     seed: int = cfg.get("random_seed", 42)
@@ -316,6 +323,7 @@ def parse_train_args(cfg: Dict, mode: str = "training") -> Tuple:
         load_encoder,
         load_decoder,
         loss_type,
+        ctc_weight,
         label_smoothing,
         normalization,
         learning_rate_min,
@@ -372,10 +380,12 @@ def parse_test_args(cfg: Dict) -> Tuple:
     else:
         eval_metrics = []
     for eval_metric in eval_metrics:
-        if eval_metric not in ["bleu", "chrf", "token_accuracy", "sequence_accuracy"]:
+        if eval_metric not in [
+            "bleu", "chrf", "token_accuracy", "sequence_accuracy", "wer"
+        ]:
             raise ConfigurationError(
-                "Invalid setting for `eval_metrics`. "
-                "Valid options: 'bleu', 'chrf', 'token_accuracy', 'sequence_accuracy'.")
+                "Invalid setting for `eval_metrics`. Valid options: {'bleu', 'chrf', "
+                "'token_accuracy', 'sequence_accuracy', 'wer'}.")
 
     # sacrebleu cfg
     sacrebleu_cfg: Dict = cfg.get("sacrebleu_cfg", {})
@@ -534,7 +544,6 @@ def resolve_ckpt_path(ckpt: str, load_model: str, model_dir: Path) -> Path:
     return Path(ckpt)
 
 
-# from onmt
 def tile(x: Tensor, count: int, dim=0) -> Tensor:
     """
     Tiles x on dimension dim count times. From OpenNMT. Used for beam search.
@@ -555,10 +564,12 @@ def tile(x: Tensor, count: int, dim=0) -> Tensor:
     out_size = list(x.size())
     out_size[0] *= count
     batch = x.size(0)
-    x = (x.view(batch,
-                -1).transpose(0, 1).repeat(count,
-                                           1).transpose(0,
-                                                        1).contiguous().view(*out_size))
+    x = (x.view(batch, -1)
+         .transpose(0, 1)
+         .repeat(count, 1)
+         .transpose(0, 1)
+         .contiguous()
+         .view(*out_size))
     if dim != 0:
         x = x.permute(perm).contiguous()
     return x
@@ -687,3 +698,43 @@ def unicode_normalize(s: str) -> str:
     s = s.replace("“", '"')
     s = s.replace("”", '"')
     return s
+
+
+def lengths_to_padding_mask(lengths: Tensor) -> Tensor:
+    """
+    get padding mask according to the given lengths
+
+    :param lengths: length list in shape (batch_size, 1)
+    :return: mask
+    """
+    bsz, max_lengths = lengths.size(0), torch.max(lengths).item()
+    mask = torch.arange(max_lengths).to(lengths.device).view(1, max_lengths)
+    mask = mask.expand(bsz, -1) >= lengths.view(bsz, 1).expand(-1, max_lengths)
+    return ~mask
+
+
+def pad(x: Tensor, max_len: int, pad_index: int = PAD_ID, dim: int = 1) -> Tensor:
+    """
+    pad tensor
+
+    :param x: tensor in shape (batch_size, seq_len, *)
+    :param max_len: max_length
+    :param pad_index: index of the pad token
+    :param dim: dimension to pad
+    :return: padded tensor
+    """
+    if pad_index is None:
+        pad_index = PAD_ID
+
+    if dim == 1:
+        batch_size, seq_len, _ = x.size()
+        offset = max_len - seq_len
+        new_x = _pad(x, (0, 0, 0, offset, 0, 0), "constant", pad_index) \
+            if x.size(1) < max_len else x
+    elif dim == -1:
+        batch_size, _, seq_len = x.size()
+        offset = max_len - seq_len
+        new_x = _pad(x, (0, offset), "constant", pad_index) \
+            if x.size(1) < max_len else x
+    assert new_x.size(dim) == max_len, (x.size(), offset, new_x.size(), max_len)
+    return new_x

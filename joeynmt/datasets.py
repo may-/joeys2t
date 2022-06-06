@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 from torch.utils.data import Dataset
 
 from joeynmt.helpers import ConfigurationError, read_list_from_file
-from joeynmt.tokenizers import BasicTokenizer
+from joeynmt.tokenizers import BasicTokenizer, SpeechProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ class BaseDataset(Dataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
     ):
         self.path = path
         self.src_lang = src_lang
@@ -55,6 +56,8 @@ class BaseDataset(Dataset):
 
         # for ransom subsampling
         self.random_subset = random_subset
+
+        self.task = task
 
     def sample_random_subset(self, seed: int = 42) -> None:
         # pylint: disable=unused-argument
@@ -131,6 +134,7 @@ class PlaintextDataset(BaseDataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
         **kwargs,
     ):
         super().__init__(
@@ -142,6 +146,7 @@ class PlaintextDataset(BaseDataset):
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
         )
 
         # load data
@@ -196,7 +201,7 @@ class PlaintextDataset(BaseDataset):
             line = self.data[lang][idx]
             return line
         except Exception as e:
-            print(idx, self._initial_len)
+            logger.error(idx, self._initial_len)
             raise Exception from e
 
     def get_list(self,
@@ -238,6 +243,7 @@ class TsvDataset(BaseDataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
         **kwargs,
     ):
         super().__init__(
@@ -249,6 +255,7 @@ class TsvDataset(BaseDataset):
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
         )
 
         # load tsv file
@@ -325,6 +332,82 @@ class TsvDataset(BaseDataset):
         return len(self.df)
 
 
+class SpeechDataset(TsvDataset):
+    """
+    Speech Dataset
+    """
+
+    def __init__(
+        self,
+        path: str,
+        src_lang: str = "src",
+        trg_lang: str = "trg",
+        split: int = "train",
+        has_trg: bool = True,
+        tokenizer: Dict[str, Union[BasicTokenizer, SpeechProcessor]] = None,
+        sequence_encoder: Dict[str, Callable] = None,
+        random_subset: int = -1,
+        task: str = "MT",
+        **kwargs,
+    ):
+        super().__init__(
+            path=path,
+            src_lang=src_lang,
+            trg_lang=trg_lang,
+            split=split,
+            has_trg=has_trg,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=random_subset,
+            task=task,
+        )
+
+        # load tsv file
+        self.df = self.load_data(path, **kwargs)
+
+        assert isinstance(self.tokenizer["src"], SpeechProcessor)
+        self.tokenizer["src"].root_path = Path(path).parent
+
+        # for random subsampling
+        self._initial_df = None
+
+    def load_data(self, path: str, **kwargs) -> Any:
+        path = Path(path)
+        file_path = path.with_suffix(f"{path.suffix}.tsv")
+        assert file_path.is_file(), f"{file_path} not found. Abort."
+
+        # read tsv data
+        try:
+            import pandas as pd  # pylint: disable=import-outside-toplevel
+
+            df = pd.read_csv(
+                file_path.as_posix(),
+                sep="\t",
+                header=0,
+                encoding="utf-8",
+                escapechar="\\",
+                quoting=3,
+                na_filter=False,
+            )
+            # TODO: use `chunksize` for online data loading.
+            assert "src" in df.columns
+
+            if "trg" not in df.columns:
+                self.has_trg = False
+                assert self.split == "test"
+            if self.has_trg:
+                df["trg"] = df["trg"].apply(self.tokenizer["trg"].pre_process)
+            return df
+
+        except ImportError as e:
+            logger.error(e)
+            raise ImportError from e
+
+    @property
+    def src(self) -> List[str]:
+        return self.df["src"]
+
+
 class StreamDataset(BaseDataset):
     """
     StreamDataset which interacts with stream inputs.
@@ -341,6 +424,7 @@ class StreamDataset(BaseDataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
         **kwargs,
     ):
         # pylint: disable=unused-argument
@@ -353,6 +437,7 @@ class StreamDataset(BaseDataset):
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
         )
         # place holder
         self.cache = {}
@@ -400,6 +485,7 @@ class BaseHuggingfaceDataset(BaseDataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
         **kwargs,
     ):
         super().__init__(
@@ -411,6 +497,7 @@ class BaseHuggingfaceDataset(BaseDataset):
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
         )
         # load data
         self.dataset = self.load_data(path, **kwargs)
@@ -420,7 +507,9 @@ class BaseHuggingfaceDataset(BaseDataset):
     def load_data(self, path: str, **kwargs) -> Any:
         # pylint: disable=import-outside-toplevel
         try:
-            from datasets import load_dataset
+            from datasets import config, load_dataset, load_from_disk
+            if Path(path, config.DATASET_STATE_JSON_FILENAME).exists():
+                return load_from_disk(path)
             return load_dataset(path, **kwargs)
 
         except ImportError as e:
@@ -490,12 +579,23 @@ class HuggingfaceDataset(BaseHuggingfaceDataset):
                 ret[tl] = self.tokenizer[tl].pre_process(item[tl])
             return ret
 
+        def _drop_nan(item):
+            sl = self.src_lang
+            tl = self.trg_lang
+            is_src_valid = item[sl] is not None and len(item[sl]) > 0
+            if self.has_trg:
+                is_trg_valid = item[tl] is not None and len(item[tl]) > 0
+                return is_src_valid and is_trg_valid
+            return is_src_valid
+
         columns = {
             f"translation.{self.src_lang}": self.src_lang,
             f"translation.{self.trg_lang}": self.trg_lang,
         }
-        return (dataset.flatten().rename_columns(columns).map(_pre_process,
-                                                              desc="Preprocessing..."))
+
+        dataset = dataset.flatten().rename_columns(columns)
+        dataset = dataset.filter(_drop_nan, desc="Dropping NaN...")
+        return dataset.map(_pre_process, desc="Preprocessing...")
 
 
 def build_dataset(
@@ -507,6 +607,7 @@ def build_dataset(
     tokenizer: Dict = None,
     sequence_encoder: Dict = None,
     random_subset: int = -1,
+    task: str = "MT",
     **kwargs,
 ):
     """
@@ -521,6 +622,7 @@ def build_dataset(
     :param tokenizer: tokenizer objects for both source and target
     :param sequence_encoder: encoding functions for both source and target
     :param random_subset: (int) number of random subset; -1 means no subsampling
+    :param task: (str)
     :return: loaded Dataset
     """
     dataset = None
@@ -539,6 +641,7 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
             **kwargs,
         )
     elif dataset_type == "tsv":
@@ -551,6 +654,20 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
+            **kwargs,
+        )
+    elif dataset_type == "speech":
+        dataset = SpeechDataset(
+            path=path,
+            src_lang="src",
+            trg_lang="trg",
+            split=split,
+            has_trg=has_trg,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=random_subset,
+            task=task,
             **kwargs,
         )
     elif dataset_type == "stream":
@@ -563,11 +680,13 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=-1,
+            task=task,
             **kwargs,
         )
     elif dataset_type == "huggingface":
         # "split" should be specified in kwargs
-        kwargs["split"] = "validation" if split == "dev" else split
+        if "split" not in kwargs:
+            kwargs["split"] = "validation" if split == "dev" else split
         dataset = HuggingfaceDataset(
             path=path,
             src_lang=src_lang,
@@ -576,6 +695,7 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
             **kwargs,
         )
     else:
