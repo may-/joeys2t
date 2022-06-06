@@ -1,7 +1,9 @@
 # coding: utf-8
 """
-Module to implement training loss
+Loss functions
 """
+from typing import Tuple
+
 import torch
 from torch import Tensor, nn
 from torch.autograd import Variable
@@ -56,19 +58,17 @@ class XentLoss(nn.Module):
         log_probs_flat = log_probs.contiguous().view(-1, vocab_size)
 
         if self.smoothing > 0:
-            targets_flat = self._smooth_targets(targets=targets.contiguous().view(-1),
-                                                vocab_size=vocab_size)
+            targets_flat = self._smooth_targets(
+                targets=targets.contiguous().view(-1), vocab_size=vocab_size)
             # targets: distributions with batch*seq_len x vocab_size
             assert log_probs_flat.size() == targets_flat.size(), (
-                log_probs.size(),
-                targets_flat.size(),
+                log_probs.size(), targets_flat.size(),
             )
         else:
             # targets: indices with batch*seq_len
             targets_flat = targets.contiguous().view(-1)
             assert log_probs_flat.size(0) == targets_flat.size(0), (
-                log_probs.size(0),
-                targets_flat.size(0),
+                log_probs.size(0), targets_flat.size(0),
             )
 
         return log_probs_flat, targets_flat
@@ -94,3 +94,58 @@ class XentLoss(nn.Module):
     def __repr__(self):
         return (f"{self.__class__.__name__}(criterion={self.criterion}, "
                 f"smoothing={self.smoothing})")
+
+
+class XentCTCLoss(XentLoss):
+    """
+    Cross-Entropy + CTC loss with optional label smoothing
+    """
+    def __init__(self, pad_index: int, bos_index: int, smoothing: float = 0.0,
+                 zero_infinity: bool = True, ctc_weight: float = 0.3):
+        super().__init__(pad_index=pad_index, smoothing=smoothing)
+
+        self.require_ctc_layer = True
+        self.bos_index = bos_index
+        self.ctc_weight = ctc_weight
+        self.ctc = nn.CTCLoss(blank=bos_index, reduction='sum',
+                              zero_infinity=zero_infinity)
+
+    def forward(self, log_probs, **kwargs) -> Tuple[Tensor, Tensor, Tensor]:
+        """
+        Compute the cross-entropy loss and ctc loss
+
+        :param log_probs: log probabilities as predicted by model
+            shape (batch_size, seq_length, vocab_size)
+        :return:
+            - total loss
+            - xent loss
+            - ctc loss
+        """
+        assert "trg" in kwargs.keys()
+        assert "trg_length" in kwargs.keys()
+        assert "src_mask" in kwargs.keys()
+        assert "ctc_log_probs" in kwargs.keys()
+
+        # reshape tensors for cross_entropy
+        log_probs_flat, targets_flat = self._reshape(log_probs, kwargs["trg"])
+
+        # cross_entropy loss
+        xent_loss = self.criterion(log_probs_flat, targets_flat)
+
+        # ctc_loss
+        # reshape ctc_log_probs to (seq_length, batch_size, vocab_size)
+        ctc_loss = self.ctc(
+            kwargs["ctc_log_probs"].transpose(0, 1).contiguous(),
+            targets=kwargs["trg"],  # (seq_length, batch_size)
+            input_lengths=kwargs["src_mask"].squeeze(1).sum(dim=1),
+            target_lengths=kwargs["trg_length"]
+        )
+
+        # interpolation
+        total_loss = (1.0-self.ctc_weight) * xent_loss + self.ctc_weight * ctc_loss
+        assert total_loss.item() >= 0.0, "loss has to be non-negative."
+        return total_loss, xent_loss, ctc_loss
+
+    def __repr__(self):
+        return (f"{self.__class__.__name__}(criterion={self.criterion}, "
+                f"smoothing={self.smoothing}, ctc_weight={self.ctc_weight})")

@@ -253,18 +253,21 @@ def _build_vocab(cfg: Dict, dataset: BaseDataset = None) -> Vocabulary:
 def build_vocab(cfg: Dict,
                 dataset: BaseDataset = None,
                 model_dir: Path = None) -> Tuple[Vocabulary, Vocabulary]:
+    task = cfg["task"].upper()
     # use the vocab file saved in model_dir
-    if model_dir is not None and cfg["src"].get("voc_file", None) is None:
-        assert (model_dir / "src_vocab.txt").is_file()
-        cfg["src"]["voc_file"] = (model_dir / "src_vocab.txt").as_posix()
+    if task == "MT":
+        if model_dir is not None and cfg["src"].get("voc_file", None) is None:
+            assert (model_dir / "src_vocab.txt").is_file()
+            cfg["src"]["voc_file"] = (model_dir / "src_vocab.txt").as_posix()
     if model_dir is not None and cfg["trg"].get("voc_file", None) is None:
         assert (model_dir / "trg_vocab.txt").is_file()
         cfg["trg"]["voc_file"] = (model_dir / "trg_vocab.txt").as_posix()
 
-    src_vocab = _build_vocab(cfg["src"], dataset)
+    src_vocab = _build_vocab(cfg["src"], dataset) if task == "MT" else None
     trg_vocab = _build_vocab(cfg["trg"], dataset)
 
-    assert src_vocab.pad_index == trg_vocab.pad_index
-    assert src_vocab.bos_index == trg_vocab.bos_index
-    assert src_vocab.eos_index == trg_vocab.eos_index
+    if task == "MT":
+        assert src_vocab.pad_index == trg_vocab.pad_index
+        assert src_vocab.bos_index == trg_vocab.bos_index
+        assert src_vocab.eos_index == trg_vocab.eos_index
     return src_vocab, trg_vocab

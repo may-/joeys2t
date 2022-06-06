@@ -58,6 +58,8 @@ class Batch:
         self.ntokens: Optional[int] = None
         self.has_trg: bool = has_trg
         self.is_train: bool = is_train
+        if self.is_train:
+            assert self.has_trg
 
         if self.has_trg:
             assert trg is not None and trg_length is not None
@@ -138,18 +140,19 @@ class Batch:
 
         sorted_src_length = self.src_length[perm_index]
         sorted_src = self.src[perm_index]
-        sorted_src_mask = self.src_mask[perm_index]
+        self.src = sorted_src
+        self.src_length = sorted_src_length
+
+        if self.src_mask:
+            sorted_src_mask = self.src_mask[perm_index]
+            self.src_mask = sorted_src_mask
+
         if self.has_trg:
             sorted_trg_input = self.trg_input[perm_index]
             sorted_trg_length = self.trg_length[perm_index]
             sorted_trg_mask = self.trg_mask[perm_index]
             sorted_trg = self.trg[perm_index]
 
-        self.src = sorted_src
-        self.src_length = sorted_src_length
-        self.src_mask = sorted_src_mask
-
-        if self.has_trg:
             self.trg_input = sorted_trg_input
             self.trg_mask = sorted_trg_mask
             self.trg_length = sorted_trg_length
@@ -174,3 +177,25 @@ class Batch:
         return (
             f"{self.__class__.__name__}(nseqs={self.nseqs}, ntokens={self.ntokens}, "
             f"has_trg={self.has_trg}, is_train={self.is_train})")
+
+
+class SpeechBatch(Batch):
+    """Batch object for speech data"""
+
+    # pylint: disable=too-many-instance-attributes
+    def __init__(
+        self,
+        src: Tensor,
+        src_length: Tensor,
+        trg: Optional[Tensor],
+        trg_length: Optional[Tensor],
+        device: torch.device,
+        pad_index: int = PAD_ID,
+        has_trg: bool = True,
+        is_train: bool = True,
+    ):
+        super().__init__(
+            src, src_length, trg, trg_length, device, pad_index, has_trg, is_train)
+        # note that src PAD_ID is BLANK_ID, which is different from trg PAD_ID!
+        self.src_mask = None  # will be constructed in encoder
+        self.src_max_len = src.size(1)

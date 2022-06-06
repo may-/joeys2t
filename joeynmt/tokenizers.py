@@ -7,11 +7,15 @@ import shutil
 from pathlib import Path
 from typing import Dict, List
 
+import numpy as np
+from sacrebleu.metrics.bleu import _get_tokenizer
 import sentencepiece as sp
 from subword_nmt import apply_bpe
 
 from joeynmt.constants import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
+from joeynmt.data_augmentation import CMVN, SpecAugment
 from joeynmt.helpers import ConfigurationError, remove_extra_spaces, unicode_normalize
+from joeynmt.helpers_for_audio import get_features
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +300,98 @@ class SubwordNMTTokenizer(BasicTokenizer):
                 f"separator={self.separator}, dropout={self.dropout})")
 
 
+class SpeechProcessor:
+    """SpeechProcessor"""
+    def __init__(
+        self,
+        level: str = "frame",
+        num_freq: int = 80,
+        normalize: bool = False,
+        max_length: int = -1,
+        min_length: int = -1,
+        **kwargs,
+    ):
+        self.level = level
+        self.num_freq = num_freq
+        self.normalize = normalize
+
+        # filter by length
+        self.max_length = max_length
+        self.min_length = min_length
+
+        self.specaugment = SpecAugment(**kwargs["specaugment"]) \
+            if "specaugment" in kwargs else None
+        self.cmvn = CMVN(**kwargs["cmvn"]) if "cmvn" in kwargs else None
+        self.root_path = ""  # assigned later by dataset.__init__()
+
+    def __call__(self, line: str, is_train: bool = False) -> np.ndarray:
+        """get features"""
+        # lookup
+        item = get_features(self.root_path, line)
+
+        if is_train and self._filter_by_length(len(item)):
+            return None
+        # cmvn / specaugment
+        if self.cmvn and self.cmvn.before:
+            item = self.cmvn(item)
+        if is_train and self.specaugment:
+            item = self.specaugment(item)
+        if self.cmvn and not self.cmvn.before:
+            item = self.cmvn(item)
+        return item
+
+    def _filter_by_length(self, length: int) -> bool:
+        return length > self.max_length > 0 or self.min_length > length > 0
+
+    def __repr__(self):
+        return (f"{self.__class__.__name__}("
+                f"level={self.level}, normalize={self.normalize}, "
+                f"filter_by_length=({self.min_length}, {self.max_length}), "
+                f"cmvn={self.cmvn}, specaugment={self.specaugment})")
+
+
+class EvaluationTokenizer(BasicTokenizer):
+    """A generic evaluation-time tokenizer, which leverages built-in tokenizers in
+    sacreBLEU (https://github.com/mjpost/sacrebleu). It additionally provides
+    lowercasing, punctuation removal and character tokenization, which are applied
+    after sacreBLEU tokenization.
+
+    :param level: (str) tokenization level. {"word", "bpe", "char"}
+    :param lowercase: (bool) lowercase the text.
+    :param tokenize: (str) the type of sacreBLEU tokenizer to apply.
+    """
+    ALL_TOKENIZER_TYPES = ["none", "13a", "intl", "zh", "ja-mecab"]
+
+    def __init__(self, lowercase: bool = False):
+        # pylint: disable=import-outside-toplevel
+        super().__init__(
+            level = "word",
+            lowercase = lowercase,
+            normalize = False,
+            max_length = -1,
+            min_length = -1
+        )
+        self._tokenizer = None
+
+    @property
+    def tokenizer(self):
+        return self._tokenizer
+
+    @tokenizer.setter
+    def tokenizer(self, tokenize: str = "13a"):
+        assert tokenize in self.ALL_TOKENIZER_TYPES, \
+            f"{tokenize}, {self.ALL_TOKENIZER_TYPES}"
+        self._tokenizer = _get_tokenizer(tokenize)()
+
+    def __call__(self, raw_input: str, is_train: bool = False) -> List[str]:
+        tokenized = self._tokenizer(raw_input)
+        return tokenized.split()
+
+    def __repr__(self):
+        return (f"{self.__class__.__name__}(level={self.level}, " 
+                f"lowercase={self.lowercase}, tokenizer={self.tokenizer})")
+
+
 def _build_tokenizer(cfg: Dict) -> BasicTokenizer:
     """Builds tokenizer."""
     tokenizer = None
@@ -338,18 +434,32 @@ def _build_tokenizer(cfg: Dict) -> BasicTokenizer:
             )
         else:
             raise ConfigurationError(f"{tokenizer_type}: Unknown tokenizer type.")
+    elif cfg["level"] == "frame":
+        tokenizer = SpeechProcessor(
+            level=cfg["level"],
+            num_freq=cfg["num_freq"],
+            normalize=cfg.get("normalize", False),
+            max_length=cfg.get("max_length", -1),
+            min_length=cfg.get("min_length", -1),
+            **tokenizer_cfg,
+        )
     else:
         raise ConfigurationError(f"{cfg['level']}: Unknown tokenization level.")
     return tokenizer
 
 
 def build_tokenizer(data_cfg: Dict) -> Dict[str, BasicTokenizer]:
-    src_lang = data_cfg["src"]["lang"]
-    trg_lang = data_cfg["trg"]["lang"]
+    task = data_cfg["task"].upper()
+    src_lang = data_cfg["src"]["lang"] if task == "MT" else "src"
+    trg_lang = data_cfg["trg"]["lang"] if task == "MT" else "trg"
     tokenizer = {
         src_lang: _build_tokenizer(data_cfg["src"]),
         trg_lang: _build_tokenizer(data_cfg["trg"]),
     }
-    logger.info("%s tokenizer: %s", src_lang, tokenizer[src_lang])
-    logger.info("%s tokenizer: %s", trg_lang, tokenizer[trg_lang])
+    log_str = "Tokenizer" if task == "MT" else "SpeechProcessor"
+    logger.info("%s %s: %s", src_lang, log_str, tokenizer[src_lang])
+    logger.info("%s Tokenizer: %s", trg_lang, tokenizer[trg_lang])
+    if task == "S2T":
+        tokenizer["eval"] = EvaluationTokenizer(
+            lowercase=data_cfg["trg"].get("lowercase", False))
     return tokenizer

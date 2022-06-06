@@ -66,12 +66,15 @@ class TrainManager:
         :param model: torch module defining the model
         :param cfg: dictionary containing the training configurations
         """
+        self.task = cfg["data"]["task"].upper()
+
         (  # pylint: disable=unbalanced-tuple-unpacking
             model_dir,
             load_model,
             load_encoder,
             load_decoder,
             loss_type,
+            ctc_weight,
             label_smoothing,
             normalization,
             learning_rate_min,
@@ -107,7 +110,7 @@ class TrainManager:
         # model
         self.model = model
         self.model.log_parameters_list()
-        self.model.loss_function = (loss_type, label_smoothing)
+        self.model.loss_function = (loss_type, label_smoothing, ctc_weight)
         logger.info(self.model)
 
         # CPU / GPU
@@ -131,7 +134,7 @@ class TrainManager:
         # early_stopping_metric decides on how to find the early stopping point: ckpts
         # are written when there's a new high/low score for this metric. If we schedule
         # after loss/ppl, we want to minimize the score, else we want to maximize it.
-        if self.early_stopping_metric in ["ppl", "loss"]:  # lower is better
+        if self.early_stopping_metric in ["ppl", "loss", "wer"]:  # lower is better
             self.minimize_metric = True
         elif self.early_stopping_metric in ["acc", "bleu", "chrf"]:  # higher is better
             self.minimize_metric = False
@@ -458,6 +461,8 @@ class TrainManager:
                 self.model.zero_grad()
                 epoch_loss = 0
                 total_batch_loss = 0
+                total_nll_loss = 0
+                total_ctc_loss = 0
                 total_n_correct = 0
 
                 # subsample train data each epoch
@@ -479,8 +484,15 @@ class TrainManager:
                     batch.sort_by_src_length()
 
                     # get batch loss
-                    norm_batch_loss, n_correct = self._train_step(batch)
+                    (
+                        norm_batch_loss,
+                        norm_nll_loss,
+                        norm_ctc_loss,
+                        n_correct
+                    ) = self._train_step(batch)
                     total_batch_loss += norm_batch_loss
+                    total_nll_loss += norm_nll_loss
+                    total_ctc_loss += norm_ctc_loss
                     total_n_correct += n_correct
 
                     # update!
@@ -516,6 +528,10 @@ class TrainManager:
                             self.tb_writer.add_scalar("train/batch_loss",
                                                       total_batch_loss,
                                                       self.stats.steps)
+                            self.tb_writer.add_scalar("train/batch_nll_loss",
+                                                      total_nll_loss, self.stats.steps)
+                            self.tb_writer.add_scalar("train/batch_ctc_loss",
+                                                      total_ctc_loss, self.stats.steps)
                             self.tb_writer.add_scalar("train/batch_acc", token_accuracy,
                                                       self.stats.steps)
                             logger.info(
@@ -539,6 +555,8 @@ class TrainManager:
                         # update epoch_loss
                         epoch_loss += total_batch_loss  # accumulate loss
                         total_batch_loss = 0  # reset batch loss
+                        total_nll_loss = 0
+                        total_ctc_loss = 0
                         total_n_correct = 0  # reset batch accuracy
 
                         # validate on the entire dev set
@@ -590,21 +608,26 @@ class TrainManager:
         :param batch: training batch
         :return:
             - losses for batch (sum)
+            - nll loss
+            - ctc loss
             - number of correct tokens for batch (sum)
         """
         # reactivate training
         self.model.train()
 
         # get loss (run as during training with teacher forcing)
-        batch_loss, _, _, correct_tokens = self.model(return_type="loss", **vars(batch))
+        batch_loss, nll_loss, ctc_loss, correct_tokens = self.model(
+            return_type="loss", **vars(batch))
 
         # normalize batch loss
         norm_batch_loss = batch.normalize(
-            batch_loss,
-            normalization=self.normalization,
-            n_gpu=self.n_gpu,
-            n_accumulation=self.batch_multiplier,
-        )
+            batch_loss, self.normalization, self.n_gpu, self.batch_multiplier)
+
+        norm_nll_loss = batch.normalize(
+            nll_loss, self.normalization, self.n_gpu, self.batch_multiplier)
+
+        norm_ctc_loss = batch.normalize(
+            ctc_loss, self.normalization, self.n_gpu, self.batch_multiplier)
 
         # sum over multiple gpus
         n_correct_tokens = batch.normalize(correct_tokens, "sum", self.n_gpu)
@@ -619,7 +642,12 @@ class TrainManager:
         # increment token counter
         self.stats.total_tokens += batch.ntokens
 
-        return norm_batch_loss.item(), n_correct_tokens.item()
+        return (
+            norm_batch_loss.item(),
+            norm_nll_loss.item(),
+            norm_ctc_loss.item(),
+            n_correct_tokens.item(),
+        )
 
     def _validate(self, valid_data: Dataset):
         if valid_data.random_subset > 0:  # subsample validation set each valid step
@@ -746,9 +774,12 @@ class TrainManager:
             logger.info("Example #%d", p)
 
             # tokenized text
-            tokenized_src = data.get_item(idx=p, lang=data.src_lang)
+            if self.task == "MT":
+                tokenized_src = data.get_item(idx=p, lang=data.src_lang)
             tokenized_trg = data.get_item(idx=p, lang=data.trg_lang)
-            logger.debug("\tTokenized source:     %s", tokenized_src)
+
+            if self.task == "MT":
+                logger.debug("\tTokenized source:     %s", tokenized_src)
             logger.debug("\tTokenized reference:  %s", tokenized_trg)
             logger.debug("\tTokenized hypothesis: %s", hypotheses_raw[p])
 
@@ -829,7 +860,8 @@ def train(cfg_file: str, skip_test: bool = False) -> None:
         data_cfg=cfg["data"])
 
     # store the vocabs and tokenizers
-    src_vocab.to_file(model_dir / "src_vocab.txt")
+    if src_vocab is not None:
+        src_vocab.to_file(model_dir / "src_vocab.txt")
     if hasattr(train_data.tokenizer[train_data.src_lang], "copy_cfg_file"):
         train_data.tokenizer[train_data.src_lang].copy_cfg_file(model_dir)
     trg_vocab.to_file(model_dir / "trg_vocab.txt")

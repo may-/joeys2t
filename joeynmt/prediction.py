@@ -29,7 +29,7 @@ from joeynmt.helpers import (
     store_attention_plots,
     write_list_to_file,
 )
-from joeynmt.metrics import bleu, chrf, sequence_accuracy, token_accuracy
+from joeynmt.metrics import bleu, chrf, sequence_accuracy, token_accuracy, wer
 from joeynmt.model import Model, _DataParallel, build_model
 from joeynmt.search import search
 from joeynmt.tokenizers import build_tokenizer
@@ -248,16 +248,10 @@ def predict(
         for eval_metric in eval_metrics:
             if eval_metric == "bleu":
                 valid_scores[eval_metric] = bleu(
-                    valid_hyp_1best,
-                    valid_ref,  # detokenized ref
-                    **sacrebleu_cfg,
-                )
+                    valid_hyp_1best, valid_ref, **sacrebleu_cfg)  # detokenized ref
             elif eval_metric == "chrf":
                 valid_scores[eval_metric] = chrf(
-                    valid_hyp_1best,
-                    valid_ref,  # detokenized ref
-                    **sacrebleu_cfg,
-                )
+                    valid_hyp_1best, valid_ref, **sacrebleu_cfg)  # detokenized ref
             elif eval_metric == "token_accuracy":
                 decoded_valid_1best = (decoded_valid if n_best == 1 else [
                     decoded_valid[i] for i in range(0, len(decoded_valid), n_best)
@@ -269,6 +263,10 @@ def predict(
             elif eval_metric == "sequence_accuracy":
                 valid_scores[eval_metric] = sequence_accuracy(
                     valid_hyp_1best, valid_ref)
+            elif eval_metric == "wer":
+                data.tokenizer["eval"].tokenizer = sacrebleu_cfg.get("tokenize", "13a")
+                valid_scores[eval_metric] = wer(
+                    valid_hyp_1best, valid_ref, data.tokenizer["eval"])
 
         eval_duration = time.time() - eval_start_time
         score_str = ", ".join([
@@ -382,6 +380,9 @@ def test(
     for data_set_name, data_set in data_to_predict.items():
         if data_set is not None:
             data_set.reset_random_subset()  # no subsampling in evaluation
+
+            if task == "S2T" and "eval" in data_set.tokenizer:
+                data_set.tokenizer["eval"] = cfg["testing"]["sacrebleu_cfg"]["tokenize"]
 
             logger.info(
                 "%s on %s set...",
