@@ -397,6 +397,10 @@ class SpeechDataset(TsvDataset):
                 assert self.split == "test"
             if self.has_trg:
                 df["trg"] = df["trg"].apply(self.tokenizer["trg"].pre_process)
+
+            # drop empty row
+            df = df.replace(r'^\s*$', float("nan"), regex=True)
+            df = df.dropna()
             return df
 
         except ImportError as e:
