@@ -82,11 +82,13 @@ class Batch:
         """Move the batch to GPU"""
         self.src = self.src.to(device)
         self.src_length = self.src_length.to(device)
-        self.src_mask = self.src_mask.to(device)
+        if self.src_mask is not None:  # if task != "S2T"
+            self.src_mask = self.src_mask.to(device)
 
         if self.has_trg:
             self.trg_input = self.trg_input.to(device)
             self.trg = self.trg.to(device)
+            self.trg_length = self.trg_length.to(device)
             self.trg_mask = self.trg_mask.to(device)
 
     def normalize(
@@ -143,7 +145,7 @@ class Batch:
         self.src = sorted_src
         self.src_length = sorted_src_length
 
-        if self.src_mask:
+        if self.src_mask is not None:  # if task != "S2T"
             sorted_src_mask = self.src_mask[perm_index]
             self.src_mask = sorted_src_mask
 
@@ -194,8 +196,8 @@ class SpeechBatch(Batch):
         has_trg: bool = True,
         is_train: bool = True,
     ):
-        super().__init__(
-            src, src_length, trg, trg_length, device, pad_index, has_trg, is_train)
+        super().__init__(src, src_length, trg, trg_length, device, pad_index, has_trg,
+                         is_train)
         # note that src PAD_ID is BLANK_ID, which is different from trg PAD_ID!
         self.src_mask = None  # will be constructed in encoder
         self.src_max_len = src.size(1)

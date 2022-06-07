@@ -484,15 +484,11 @@ class TrainManager:
                     batch.sort_by_src_length()
 
                     # get batch loss
-                    (
-                        norm_batch_loss,
-                        norm_nll_loss,
-                        norm_ctc_loss,
-                        n_correct
-                    ) = self._train_step(batch)
+                    (norm_batch_loss, norm_nll_loss, norm_ctc_loss,
+                     n_correct) = self._train_step(batch)
                     total_batch_loss += norm_batch_loss
-                    total_nll_loss += norm_nll_loss
-                    total_ctc_loss += norm_ctc_loss
+                    total_nll_loss += norm_nll_loss if norm_nll_loss is not None else 0
+                    total_ctc_loss += norm_ctc_loss if norm_ctc_loss is not None else 0
                     total_n_correct += n_correct
 
                     # update!
@@ -528,10 +524,14 @@ class TrainManager:
                             self.tb_writer.add_scalar("train/batch_loss",
                                                       total_batch_loss,
                                                       self.stats.steps)
-                            self.tb_writer.add_scalar("train/batch_nll_loss",
-                                                      total_nll_loss, self.stats.steps)
-                            self.tb_writer.add_scalar("train/batch_ctc_loss",
-                                                      total_ctc_loss, self.stats.steps)
+                            if total_nll_loss != 0:
+                                self.tb_writer.add_scalar("train/batch_nll_loss",
+                                                          total_nll_loss,
+                                                          self.stats.steps)
+                            if total_ctc_loss != 0:
+                                self.tb_writer.add_scalar("train/batch_ctc_loss",
+                                                          total_ctc_loss,
+                                                          self.stats.steps)
                             self.tb_writer.add_scalar("train/batch_acc", token_accuracy,
                                                       self.stats.steps)
                             logger.info(
@@ -616,18 +616,20 @@ class TrainManager:
         self.model.train()
 
         # get loss (run as during training with teacher forcing)
-        batch_loss, nll_loss, ctc_loss, correct_tokens = self.model(
-            return_type="loss", **vars(batch))
+        batch_loss, nll_loss, ctc_loss, correct_tokens = self.model(return_type="loss",
+                                                                    **vars(batch))
 
         # normalize batch loss
-        norm_batch_loss = batch.normalize(
-            batch_loss, self.normalization, self.n_gpu, self.batch_multiplier)
+        norm_batch_loss = batch.normalize(batch_loss, self.normalization, self.n_gpu,
+                                          self.batch_multiplier)
 
         norm_nll_loss = batch.normalize(
-            nll_loss, self.normalization, self.n_gpu, self.batch_multiplier)
+            nll_loss, self.normalization, self.n_gpu,
+            self.batch_multiplier) if nll_loss is not None else None
 
         norm_ctc_loss = batch.normalize(
-            ctc_loss, self.normalization, self.n_gpu, self.batch_multiplier)
+            ctc_loss, self.normalization, self.n_gpu,
+            self.batch_multiplier) if ctc_loss is not None else None
 
         # sum over multiple gpus
         n_correct_tokens = batch.normalize(correct_tokens, "sum", self.n_gpu)
@@ -644,8 +646,8 @@ class TrainManager:
 
         return (
             norm_batch_loss.item(),
-            norm_nll_loss.item(),
-            norm_ctc_loss.item(),
+            norm_nll_loss.item() if norm_nll_loss is not None else None,
+            norm_ctc_loss.item() if norm_ctc_loss is not None else None,
             n_correct_tokens.item(),
         )
 

@@ -4,6 +4,7 @@ Data Augmentation
 """
 import math
 from typing import Optional
+
 import numpy as np
 
 
@@ -11,7 +12,8 @@ class SpecAugment:
     """
     SpecAugment (https://arxiv.org/abs/1904.08779)
     cf.) https://github.com/pytorch/fairseq/blob/main/fairseq/data/audio/feature_transforms/specaugment.py
-    """
+    """  # noqa
+
     def __init__(self,
                  freq_mask_n: int = 2,
                  freq_mask_f: int = 27,
@@ -47,11 +49,10 @@ class SpecAugment:
             f = np.random.randint(0, self.freq_mask_f)
             f0 = np.random.randint(0, num_freqs - f)
             if f != 0:
-                distorted[:, f0 : f0 + f] = mask_value
+                distorted[:, f0:f0 + f] = mask_value
 
-        max_time_mask_t = min(
-            self.time_mask_t, math.floor(num_frames * self.time_mask_p)
-        )
+        max_time_mask_t = min(self.time_mask_t,
+                              math.floor(num_frames * self.time_mask_p))
         if max_time_mask_t < 1:
             return distorted
 
@@ -59,7 +60,7 @@ class SpecAugment:
             t = np.random.randint(0, max_time_mask_t)
             t0 = np.random.randint(0, num_frames - t)
             if t != 0:
-                distorted[t0 : t0 + t, :] = mask_value
+                distorted[t0:t0 + t, :] = mask_value
 
         assert distorted.shape == spectrogram.shape
         return distorted
@@ -74,9 +75,12 @@ class CMVN:
     """
     CMVN: Cepstral Mean and Variance Normalization (Utterance-level)
     cf.) https://github.com/pytorch/fairseq/blob/main/fairseq/data/audio/feature_transforms/utterance_cmvn.py
-    """
+    """ # noqa
 
-    def __init__(self, norm_means: bool = True, norm_vars: bool = True, before: bool = True):
+    def __init__(self,
+                 norm_means: bool = True,
+                 norm_vars: bool = True,
+                 before: bool = True):
         self.norm_means = norm_means
         self.norm_vars = norm_vars
         self.before = before
@@ -84,12 +88,12 @@ class CMVN:
     def __call__(self, x: np.ndarray) -> np.ndarray:
         orig_shape = x.shape
         mean = x.mean(axis=0)
-        square_sums = (x ** 2).sum(axis=0)
+        square_sums = (x**2).sum(axis=0)
 
         if self.norm_means:
             x = np.subtract(x, mean)
         if self.norm_vars:
-            var = square_sums / x.shape[0] - mean ** 2
+            var = square_sums / x.shape[0] - mean**2
             std = np.sqrt(np.maximum(var, 1e-10))
             x = np.divide(x, std)
 

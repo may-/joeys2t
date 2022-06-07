@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-from sacrebleu.metrics.bleu import _get_tokenizer
 import sentencepiece as sp
+from sacrebleu.metrics.bleu import _get_tokenizer
 from subword_nmt import apply_bpe
 
 from joeynmt.constants import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
@@ -51,7 +51,7 @@ class BasicTokenizer:
         if self.pretokenizer == "moses":
             try:
                 from sacremoses import (  # pylint: disable=import-outside-toplevel
-                    MosesTokenizer, MosesDetokenizer, MosesPunctNormalizer,
+                    MosesDetokenizer, MosesPunctNormalizer, MosesTokenizer,
                 )
             except ImportError as e:
                 logger.error(e)
@@ -302,6 +302,7 @@ class SubwordNMTTokenizer(BasicTokenizer):
 
 class SpeechProcessor:
     """SpeechProcessor"""
+
     def __init__(
         self,
         level: str = "frame",
@@ -362,33 +363,22 @@ class EvaluationTokenizer(BasicTokenizer):
     """
     ALL_TOKENIZER_TYPES = ["none", "13a", "intl", "zh", "ja-mecab"]
 
-    def __init__(self, lowercase: bool = False):
-        # pylint: disable=import-outside-toplevel
-        super().__init__(
-            level = "word",
-            lowercase = lowercase,
-            normalize = False,
-            max_length = -1,
-            min_length = -1
-        )
-        self._tokenizer = None
+    def __init__(self, lowercase: bool = False, tokenize: str = "13a"):
+        super().__init__(level="word",
+                         lowercase=lowercase,
+                         normalize=False,
+                         max_length=-1,
+                         min_length=-1)
 
-    @property
-    def tokenizer(self):
-        return self._tokenizer
-
-    @tokenizer.setter
-    def tokenizer(self, tokenize: str = "13a"):
-        assert tokenize in self.ALL_TOKENIZER_TYPES, \
-            f"{tokenize}, {self.ALL_TOKENIZER_TYPES}"
-        self._tokenizer = _get_tokenizer(tokenize)()
+        assert tokenize in self.ALL_TOKENIZER_TYPES, f"`{tokenize}` not supported."
+        self.tokenizer = _get_tokenizer(tokenize)()
 
     def __call__(self, raw_input: str, is_train: bool = False) -> List[str]:
-        tokenized = self._tokenizer(raw_input)
+        tokenized = self.tokenizer(raw_input)
         return tokenized.split()
 
     def __repr__(self):
-        return (f"{self.__class__.__name__}(level={self.level}, " 
+        return (f"{self.__class__.__name__}(level={self.level}, "
                 f"lowercase={self.lowercase}, tokenizer={self.tokenizer})")
 
 
@@ -459,7 +449,4 @@ def build_tokenizer(data_cfg: Dict) -> Dict[str, BasicTokenizer]:
     log_str = "Tokenizer" if task == "MT" else "SpeechProcessor"
     logger.info("%s %s: %s", src_lang, log_str, tokenizer[src_lang])
     logger.info("%s Tokenizer: %s", trg_lang, tokenizer[trg_lang])
-    if task == "S2T":
-        tokenizer["eval"] = EvaluationTokenizer(
-            lowercase=data_cfg["trg"].get("lowercase", False))
     return tokenizer

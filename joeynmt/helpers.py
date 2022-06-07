@@ -176,11 +176,11 @@ def log_data_info(
             train_data.get_item(idx=0, lang=train_data.trg_lang, is_train=False))
         logger.info("First training example:%s%s", src, trg)
 
-    if src_vocab is None is not None:
+    if src_vocab is not None:
         logger.info("First 10 Src tokens: %s", src_vocab.log_vocab(10))
     logger.info("First 10 Trg tokens: %s", trg_vocab.log_vocab(10))
 
-    if src_vocab is None is not None:
+    if src_vocab is not None:
         logger.info("Number of unique Src tokens (vocab_size): %d", len(src_vocab))
     logger.info("Number of unique Trg tokens (vocab_size): %d", len(trg_vocab))
 
@@ -381,7 +381,7 @@ def parse_test_args(cfg: Dict) -> Tuple:
         eval_metrics = []
     for eval_metric in eval_metrics:
         if eval_metric not in [
-            "bleu", "chrf", "token_accuracy", "sequence_accuracy", "wer"
+                "bleu", "chrf", "token_accuracy", "sequence_accuracy", "wer"
         ]:
             raise ConfigurationError(
                 "Invalid setting for `eval_metrics`. Valid options: {'bleu', 'chrf', "
@@ -564,7 +564,7 @@ def tile(x: Tensor, count: int, dim=0) -> Tensor:
     out_size = list(x.size())
     out_size[0] *= count
     batch = x.size(0)
-    x = (x.view(batch, -1)
+    x = (x.view(batch,-1)
          .transpose(0, 1)
          .repeat(count, 1)
          .transpose(0, 1)

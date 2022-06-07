@@ -221,9 +221,9 @@ class TransformerEncoder(Encoder):
         # conv1d subsampling for audio inputs
         self.subsample = kwargs.get("subsample", False)
         if self.subsample:
-            self.subsampler = Conv1dSubsampler(
-                kwargs["in_channels"], kwargs["conv_channels"], hidden_size,
-                kwargs.get("conv_kernel_sizes", [3, 3]))
+            self.subsampler = Conv1dSubsampler(kwargs["in_channels"],
+                                               kwargs["conv_channels"], hidden_size,
+                                               kwargs.get("conv_kernel_sizes", [3, 3]))
             self.pad_index = kwargs.get("pad_index", PAD_ID)
             assert self.pad_index is not None
 
@@ -269,7 +269,7 @@ class TransformerEncoder(Encoder):
         if kwargs.get('pad', False) and "src_max_len" in kwargs and self.subsample:
             x = pad(x, kwargs["src_max_len"], pad_index=self.pad_index, dim=1)
             mask = pad(mask, kwargs["src_max_len"], pad_index=self.pad_index, dim=-1)
-        assert src_length.size() == (x.size(0),), (src_length.size(), x.size())
+        assert src_length.size() == (x.size(0), ), (src_length.size(), x.size())
         assert mask is not None
         return x, None, mask
 
@@ -313,14 +313,12 @@ class Conv1dSubsampler(nn.Module):
                 k,
                 stride=2,
                 padding=k // 2,
-            )
-            for i, k in enumerate(kernel_sizes)
-        )
+            ) for i, k in enumerate(kernel_sizes))
 
     def get_out_seq_lens_tensor(self, in_seq_lens_tensor):
         out = in_seq_lens_tensor.clone()
         for k in self.kernel_sizes:
-            out = ((out.float()+2*(k//2)-(k-1)-1)/2+1).floor().long()
+            out = ((out.float() + 2 * (k // 2) - (k - 1) - 1) / 2 + 1).floor().long()
         return out
 
     def forward(self, src_tokens, src_lengths):
@@ -331,7 +329,7 @@ class Conv1dSubsampler(nn.Module):
         assert src_tokens.size(1) == max_len, (src_tokens.size(), max_len, src_lengths)
 
         _, in_seq_len, _ = src_tokens.size()  # -> B x T x (C x D)
-        x = src_tokens.transpose(1, 2).contiguous() # -> B x (C x D) x T
+        x = src_tokens.transpose(1, 2).contiguous()  # -> B x (C x D) x T
         for conv in self.conv_layers:
             x = conv(x)
             x = nn.functional.glu(x, dim=1)

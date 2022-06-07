@@ -4,12 +4,11 @@ Collection of helper functions for audio processing
 """
 
 import io
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
-
 import torch
 import torchaudio
 import torchaudio.compliance.kaldi as ta_kaldi
@@ -26,13 +25,17 @@ def _convert_to_mono(waveform: torch.FloatTensor, sample_rate: int) \
         return ta_sox.apply_effects_tensor(waveform, sample_rate, effects)[0]
     return waveform
 
+
 # from fairseq
-def _get_torchaudio_fbank(waveform: torch.FloatTensor, sample_rate: int,
+def _get_torchaudio_fbank(waveform: torch.FloatTensor,
+                          sample_rate: int,
                           n_bins: int = 80) -> np.ndarray:
     """Get mel-filter bank features via TorchAudio."""
-    features = ta_kaldi.fbank(
-        waveform, num_mel_bins=n_bins, sample_frequency=sample_rate)
+    features = ta_kaldi.fbank(waveform,
+                              num_mel_bins=n_bins,
+                              sample_frequency=sample_rate)
     return features.numpy()
+
 
 # from fairseq
 def extract_fbank_features(waveform: torch.FloatTensor,
@@ -46,7 +49,7 @@ def extract_fbank_features(waveform: torch.FloatTensor,
         return
 
     _waveform = _convert_to_mono(waveform, sample_rate)
-    _waveform = waveform * (2 ** 15)  # Kaldi compliance: 16-bit signed integers
+    _waveform = waveform * (2**15)  # Kaldi compliance: 16-bit signed integers
 
     try:
         features = _get_torchaudio_fbank(_waveform, sample_rate, n_mel_bins)
@@ -56,12 +59,15 @@ def extract_fbank_features(waveform: torch.FloatTensor,
 
     if output_path is not None:
         np.save(output_path.as_posix(), features)
+        assert output_path.is_file(), output_path
     else:
         return features
+
 
 # from fairseq
 def _is_npy_data(data: bytes) -> bool:
     return data[0] == 147 and data[1] == 78
+
 
 # from fairseq
 def _get_features_from_zip(path, byte_offset, byte_size):
@@ -75,11 +81,13 @@ def _get_features_from_zip(path, byte_offset, byte_size):
         raise ValueError(f'Unknown file format for "{path}"')
     return features
 
+
 # from fairseq
 def get_n_frames(wave_length: int, sample_rate: int):
     duration_ms = int(wave_length / sample_rate * 1000)
     n_frames = int(1 + (duration_ms - 25) / 10)
     return n_frames
+
 
 # from fairseq
 def get_features(root_path: Path, fbank_path: str) -> np.ndarray:

@@ -541,7 +541,8 @@ class TransformerDecoder(Decoder):
         encoder_output_size = kwargs.get("encoder_output_size_for_ctc", None)
         if encoder_output_size is not None:
             self.ctc_output_layer = nn.Linear(encoder_output_size,
-                                              vocab_size, bias=False)
+                                              vocab_size,
+                                              bias=False)
 
     def forward(
         self,

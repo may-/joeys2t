@@ -170,8 +170,10 @@ class Model(nn.Module):
             - ctc output
             - src mask
         """
-        encoder_output, encoder_hidden, src_mask = self._encode(
-            src=src, src_length=src_length, src_mask=src_mask, **kwargs)
+        encoder_output, encoder_hidden, src_mask = self._encode(src=src,
+                                                                src_length=src_length,
+                                                                src_mask=src_mask,
+                                                                **kwargs)
 
         unroll_steps = trg_input.size(1)
 
@@ -299,9 +301,9 @@ def build_model(cfg: dict = None,
     trg_pad_index = trg_vocab.pad_index
     src_pad_index = src_vocab.pad_index if src_vocab is not None else trg_pad_index
 
-    src_embed = Embeddings(
-        **enc_cfg["embeddings"], vocab_size=len(src_vocab), padding_idx=src_pad_index
-    ) if src_vocab is not None else None
+    src_embed = Embeddings(**enc_cfg["embeddings"],
+                           vocab_size=len(src_vocab),
+                           padding_idx=src_pad_index) if src_vocab is not None else None
 
     # this ties source and target embeddings for softmax layer tying, see further below
     if cfg.get("tied_embeddings", False):
@@ -332,12 +334,14 @@ def build_model(cfg: dict = None,
         elif task == "S2T":
             emb_size = enc_cfg["embeddings"]["embedding_dim"]
             #TODO: check if emb_size == num_freq
-        encoder = TransformerEncoder(**enc_cfg, emb_size=emb_size,
+        encoder = TransformerEncoder(**enc_cfg,
+                                     emb_size=emb_size,
                                      emb_dropout=enc_emb_dropout,
                                      pad_index=src_pad_index)
     else:
         assert task == "MT", "RNN model not supported for s2t task. use transformer."
-        encoder = RecurrentEncoder(**enc_cfg,vemb_size=src_embed.embedding_dim,
+        encoder = RecurrentEncoder(**enc_cfg,
+                                   vemb_size=src_embed.embedding_dim,
                                    emb_dropout=enc_emb_dropout)
 
     # build decoder
@@ -350,12 +354,14 @@ def build_model(cfg: dict = None,
     if dec_type == "transformer":
         if task == "S2T":
             dec_cfg["encoder_output_size_for_ctc"] = encoder._output_size
-        decoder = TransformerDecoder(**dec_cfg, encoder=encoder,
+        decoder = TransformerDecoder(**dec_cfg,
+                                     encoder=encoder,
                                      vocab_size=len(trg_vocab),
                                      emb_size=trg_embed.embedding_dim,
                                      emb_dropout=dec_emb_dropout)
     else:
-        decoder = RecurrentDecoder(**dec_cfg, encoder=encoder,
+        decoder = RecurrentDecoder(**dec_cfg,
+                                   encoder=encoder,
                                    vocab_size=len(trg_vocab),
                                    emb_size=trg_embed.embedding_dim,
                                    emb_dropout=dec_emb_dropout)

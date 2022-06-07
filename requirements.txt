@@ -18,3 +18,5 @@ yapf
 flake8
 pytest
 datasets
+pandas
+editdistance

@@ -6,8 +6,8 @@ import logging
 from inspect import getfullargspec
 from typing import List
 
-from sacrebleu.metrics import BLEU, CHRF
 import editdistance
+from sacrebleu.metrics import BLEU, CHRF
 
 logger = logging.getLogger(__name__)
 

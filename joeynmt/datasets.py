@@ -305,16 +305,16 @@ class TsvDataset(BaseDataset):
         if self._initial_df is None:
             self._initial_df = self.df.copy(deep=True)
 
-        self.df = self._initial_df.sample(
-            n=self.random_subset,
-            replace=False,
-            random_state=seed,  # resample every epoch: seed += epoch_no
-        ).reset_index()
+            self.df = self._initial_df.sample(
+                n=self.random_subset,
+                replace=False,
+                random_state=seed,  # resample every epoch: seed += epoch_no
+            ).reset_index()
 
     def reset_random_subset(self):
-        assert self._initial_df is not None
-        self.df = self._initial_df
-        self._initial_df = None
+        if self._initial_df is not None:
+            self.df = self._initial_df
+            self._initial_df = None
 
     def get_item(self, idx: int, lang: str, is_train: bool = None) -> List[str]:
         line = self.df.iloc[idx][lang]
