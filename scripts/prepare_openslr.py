@@ -5,7 +5,7 @@ Prepare OpenSLR
 
 expected dir structure:
     OpenSLR/  # <- point here in --data_root in argument
-    └── SLR32/
+    └── SLR70/
             ├── fbank80/
             ├── fbank80.zip
             ├── joey_train_asr.tsv
@@ -40,7 +40,7 @@ from tqdm import tqdm
 from joeynmt.helpers import write_list_to_file
 from joeynmt.helpers_for_audio import extract_fbank_features, get_n_frames
 
-COLUMNS = ["id", "src", "n_frames", "trg", "speaker"]
+COLUMNS = ["id", "src", "n_frames", "trg"]
 
 SEED = 123
 N_MEL_FILTERS = 80
@@ -49,7 +49,7 @@ SP_MODEL_TYPE = "bpe"  # one of ["bpe", "unigram", "char"]
 VOCAB_SIZE = 1000  # joint vocab
 
 
-def process(data_root, name, language):
+def process(data_root, name):
     root = Path(data_root).absolute()
     cur_root = root / name
 
@@ -58,7 +58,7 @@ def process(data_root, name, language):
     feature_root.mkdir(parents=True, exist_ok=True)
 
     # Extract features
-    print(f"Create OpenSLR {name} {language} dataset.")
+    print(f"Create OpenSLR {name} dataset.")
 
     print(f"Fetching train split ...")
     dataset = load_dataset("openslr", name=name, split="train")
@@ -80,6 +80,7 @@ def process(data_root, name, language):
     # Pack features into ZIP
     print("ZIPing features...")
     create_zip(feature_root, feature_root.with_suffix(".zip"))
+
     print("Fetching ZIP manifest...")
     zip_manifest = get_zip_manifest(feature_root.with_suffix(".zip"))
 
@@ -89,7 +90,6 @@ def process(data_root, name, language):
 
     for instance in tqdm(dataset):
         utt_id = Path(instance['path']).stem
-        lang = Path(instance['path']).parents[2].name
         n_frames = np.load(feature_root / f'{utt_id}.npy').shape[0]
         try:
             all_data.append({
@@ -97,7 +97,6 @@ def process(data_root, name, language):
                 "src": zip_manifest[str(utt_id)],
                 "n_frames": n_frames,
                 "trg": instance['sentence'],
-                "lang": lang,
             })
         except Exception as e:
             print(f'Skip instance {utt_id}.', e)
@@ -105,7 +104,6 @@ def process(data_root, name, language):
 
     all_df = pd.DataFrame.from_records(all_data)
     save_tsv(all_df, cur_root / f"all_data.tsv")
-    all_df = all_df[all_df.lang == language]
 
     # Split the data into train and test set and save the splits in tsv
     np.random.seed(SEED)
@@ -120,7 +118,7 @@ def process(data_root, name, language):
         # save tsv
         save_tsv(split_df, cur_root / f"{split}.tsv")
         # save plain txt
-        write_list_to_file(cur_root / f"{split}.{language}", split_df['trg'].to_list())
+        write_list_to_file(cur_root / f"{split}.txt", split_df['trg'].to_list())
         print(split, len(split_df))
 
     # Generate joint vocab
@@ -129,18 +127,17 @@ def process(data_root, name, language):
               'vocab_size': VOCAB_SIZE,
               'character_coverage': 1.0,
               'num_workers': N_WORKERS}
-    build_sp_model(cur_root / f"train.{language}", cur_root / "spm_bpe1000", **kwargs)
+    build_sp_model(cur_root / "train.txt", cur_root / f"spm_bpe{VOCAB_SIZE}", **kwargs)
     print("Done!")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", "-d", required=True, type=str)
-    parser.add_argument("--dataset_name", "-n", default="SLT32", required=True, type=str)
-    parser.add_argument("--language", "-l", default="af_za", required=True, type=str)
+    parser.add_argument("--dataset_name", "-n", default="SLT70", required=True, type=str)
     args = parser.parse_args()
 
-    process(args.data_root, args.dataset_name, args.language)
+    process(args.data_root, args.dataset_name)
 
 
 if __name__ == "__main__":
