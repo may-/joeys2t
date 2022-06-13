@@ -32,6 +32,7 @@ class Batch:
         pad_index: int = PAD_ID,
         has_trg: bool = True,
         is_train: bool = True,
+        task: str = "MT",
     ):
         """
         Creates a new joey batch. This batch supports attributes with src and trg
@@ -45,10 +46,12 @@ class Batch:
         :param device:
         :param pad_index: *must be the same for both src and trg
         :param is_train: *can be used for online data augmentation, subsampling etc.
+        :param task: task
         """
         self.src: Tensor = src
         self.src_length: Tensor = src_length
-        self.src_mask: Tensor = (self.src != pad_index).unsqueeze(1)
+        self.src_mask: Optional[Tensor] = None
+
         self.trg_input: Optional[Tensor] = None
         self.trg: Optional[Tensor] = None
         self.trg_mask: Optional[Tensor] = None
@@ -75,6 +78,16 @@ class Batch:
         if device.type == "cuda":
             self._make_cuda(device)
 
+        self.task: str = task
+        if self.task == "MT":
+            self.src_mask: Tensor = (self.src != pad_index).unsqueeze(1)
+        elif self.task == "S2T":
+            # Note: src_mask will be re-constructed in TransformerEncoder
+            self.src_max_len: int = self.src.size(1)
+            # if multi-gpu, re-pad src so that all seqs in parallel gpus
+            # have the same length!
+            self.repad: bool = True if torch.cuda.device_count() > 1 else False
+
         # a batch has to contain more than one src sentence
         assert self.nseqs > 0, self.nseqs
 
@@ -82,7 +95,7 @@ class Batch:
         """Move the batch to GPU"""
         self.src = self.src.to(device)
         self.src_length = self.src_length.to(device)
-        if self.src_mask is not None:  # if task != "S2T"
+        if self.src_mask is not None:  # if self.task == "MT":
             self.src_mask = self.src_mask.to(device)
 
         if self.has_trg:
@@ -178,26 +191,4 @@ class Batch:
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(nseqs={self.nseqs}, ntokens={self.ntokens}, "
-            f"has_trg={self.has_trg}, is_train={self.is_train})")
-
-
-class SpeechBatch(Batch):
-    """Batch object for speech data"""
-
-    # pylint: disable=too-many-instance-attributes
-    def __init__(
-        self,
-        src: Tensor,
-        src_length: Tensor,
-        trg: Optional[Tensor],
-        trg_length: Optional[Tensor],
-        device: torch.device,
-        pad_index: int = PAD_ID,
-        has_trg: bool = True,
-        is_train: bool = True,
-    ):
-        super().__init__(src, src_length, trg, trg_length, device, pad_index, has_trg,
-                         is_train)
-        # note that src PAD_ID is BLANK_ID, which is different from trg PAD_ID!
-        self.src_mask = None  # will be constructed in encoder
-        self.src_max_len = src.size(1)
+            f"has_trg={self.has_trg}, is_train={self.is_train}, task={self.task})")

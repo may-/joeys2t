@@ -730,11 +730,11 @@ def pad(x: Tensor, max_len: int, pad_index: int = PAD_ID, dim: int = 1) -> Tenso
         batch_size, seq_len, _ = x.size()
         offset = max_len - seq_len
         new_x = _pad(x, (0, 0, 0, offset, 0, 0), "constant", pad_index) \
-            if x.size(1) < max_len else x
+            if x.size(dim) < max_len else x
     elif dim == -1:
         batch_size, _, seq_len = x.size()
         offset = max_len - seq_len
         new_x = _pad(x, (0, offset), "constant", pad_index) \
-            if x.size(1) < max_len else x
+            if x.size(dim) < max_len else x
     assert new_x.size(dim) == max_len, (x.size(), offset, new_x.size(), max_len)
     return new_x

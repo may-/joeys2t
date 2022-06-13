@@ -477,6 +477,7 @@ def translate(
     test_cfg = cfg["testing"]
     src_cfg = cfg["data"]["src"]
     trg_cfg = cfg["data"]["trg"]
+    task = cfg["data"].get("task", "MT").upper()
 
     _ = make_logger(model_dir, mode="translate")
     # version string returned
@@ -498,15 +499,21 @@ def translate(
         model.to(device)
 
     tokenizer = build_tokenizer(cfg["data"])
-    sequence_encoder = {
-        src_cfg["lang"]: partial(src_vocab.sentences_to_ids, bos=False, eos=True),
-        trg_cfg["lang"]: None,
-    }
+    if task == "MT":
+        sequence_encoder = {
+            src_cfg["lang"]: partial(src_vocab.sentences_to_ids, bos=False, eos=True),
+            trg_cfg["lang"]: None,
+        }
+    elif task == "S2T":
+        sequence_encoder = {
+            "src": partial(pad_features, embed_size=tokenizer["src"].num_freq),
+            "trg": None,
+        }
     test_data = build_dataset(
         dataset_type="stream",
         path=None,
-        src_lang=src_cfg["lang"],
-        trg_lang=trg_cfg["lang"],
+        src_lang=src_cfg["lang"] if task == "MT" else "src",
+        trg_lang=trg_cfg["lang"] if task == "MT" else "trg",
         split="test",
         tokenizer=tokenizer,
         sequence_encoder=sequence_encoder,

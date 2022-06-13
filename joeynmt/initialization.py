@@ -9,6 +9,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn.init import _calculate_fan_in_and_fan_out
 
+from joeynmt.embeddings import Embeddings
 from joeynmt.helpers import ConfigurationError
 
 
@@ -191,7 +192,7 @@ def initialize_model(model: nn.Module, cfg: dict, src_padding_idx: int,
                     init_fn_(p)
 
         # zero out paddings
-        if model.src_embed is not None:
+        if isinstance(model.src_embed, Embeddings):
             model.src_embed.lut.weight.data[src_padding_idx].zero_()
         model.trg_embed.lut.weight.data[trg_padding_idx].zero_()
 

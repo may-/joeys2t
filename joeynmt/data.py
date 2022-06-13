@@ -16,7 +16,7 @@ from torch.utils.data import (
     SequentialSampler,
 )
 
-from joeynmt.batch import Batch, SpeechBatch
+from joeynmt.batch import Batch
 from joeynmt.constants import PAD_ID
 from joeynmt.datasets import build_dataset
 from joeynmt.helpers import log_data_info
@@ -57,7 +57,7 @@ def load_data(
     if datasets is None:
         datasets = ["train", "dev", "test"]
 
-    task = data_cfg["task"].upper()
+    task = data_cfg.get("task", "MT").upper()
     assert task in ["MT", "S2T"]
 
     src_cfg = data_cfg["src"]
@@ -182,7 +182,7 @@ def collate_fn(
     has_trg: bool = True,
     is_train: bool = True,
     **kwargs,
-) -> Union[Batch, SpeechBatch]:
+) -> Batch:
     """
     Custom collate function.
     See https://pytorch.org/docs/stable/data.html#dataloader-collate-fn for details.
@@ -221,28 +221,17 @@ def collate_fn(
         trg, trg_length = None, None
 
     task = kwargs.get("task", "MT")
-    if task == "MT":
-        return Batch(
-            src=torch.tensor(src).long(),
-            src_length=torch.tensor(src_length).long(),
-            trg=torch.tensor(trg).long() if trg else None,
-            trg_length=torch.tensor(trg_length).long() if trg_length else None,
-            device=device,
-            pad_index=pad_index,
-            has_trg=has_trg,
-            is_train=is_train,
-        )
-    elif task == "S2T":
-        return SpeechBatch(
-            src=torch.tensor(src).float(),
-            src_length=torch.tensor(src_length).long(),
-            trg=torch.tensor(trg).long() if trg else None,
-            trg_length=torch.tensor(trg_length).long() if trg_length else None,
-            device=device,
-            pad_index=pad_index,
-            has_trg=has_trg,
-            is_train=is_train,
-        )
+    return Batch(
+        src=torch.tensor(src).long() if task == "MT" else torch.tensor(src).float(),
+        src_length=torch.tensor(src_length).long(),
+        trg=torch.tensor(trg).long() if trg else None,
+        trg_length=torch.tensor(trg_length).long() if trg_length else None,
+        device=device,
+        pad_index=pad_index,
+        has_trg=has_trg,
+        is_train=is_train,
+        task=task,
+    )
 
 
 def make_data_iter(

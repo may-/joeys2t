@@ -464,6 +464,8 @@ class TrainManager:
                 total_nll_loss = 0
                 total_ctc_loss = 0
                 total_n_correct = 0
+                total_nseqs = 0
+                total_ntokens = 0
 
                 # subsample train data each epoch
                 if train_data.random_subset > 0:
@@ -490,6 +492,11 @@ class TrainManager:
                     total_nll_loss += norm_nll_loss if norm_nll_loss is not None else 0
                     total_ctc_loss += norm_ctc_loss if norm_ctc_loss is not None else 0
                     total_n_correct += n_correct
+
+                    # increment seq/token counter
+                    total_nseqs += batch.nseqs
+                    total_ntokens += batch.ntokens
+                    self.stats.total_tokens += batch.ntokens
 
                     # update!
                     if (i + 1) % self.batch_multiplier == 0:
@@ -583,15 +590,16 @@ class TrainManager:
                     break
 
                 logger.info(
-                    "Epoch %3d: total training loss %.2f",
+                    "Epoch %3d: total training loss %.2f, num seqs %d, num tokens %d",
                     epoch_no + 1,
                     epoch_loss,
+                    total_nseqs,
+                    total_ntokens
                 )
             else:
                 logger.info("Training ended after %3d epochs.", epoch_no + 1)
             logger.info(
-                "Best validation result (greedy) "
-                "at step %8d: %6.2f %s.",
+                "Best validation result (greedy) at step %8d: %6.2f %s.",
                 self.stats.best_ckpt_iter,
                 self.stats.best_ckpt_score,
                 self.early_stopping_metric,
@@ -640,9 +648,6 @@ class TrainManager:
                 scaled_loss.backward()
         else:
             norm_batch_loss.backward()
-
-        # increment token counter
-        self.stats.total_tokens += batch.ntokens
 
         return (
             norm_batch_loss.item(),

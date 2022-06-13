@@ -37,6 +37,7 @@ class Model(nn.Module):
         trg_embed: Embeddings,
         src_vocab: Vocabulary,
         trg_vocab: Vocabulary,
+        task: str,
     ) -> None:
         """
         Create a new encoder-decoder model
@@ -50,7 +51,7 @@ class Model(nn.Module):
         """
         super().__init__()
 
-        self.src_embed = src_embed
+        self.src_embed = src_embed  # nn.Identity() if task == "S2T"
         self.trg_embed = trg_embed
         self.encoder = encoder
         self.decoder = decoder
@@ -61,6 +62,11 @@ class Model(nn.Module):
         self.eos_index = self.trg_vocab.eos_index
         self.unk_index = self.trg_vocab.unk_index
         self._loss_function = None  # set by the TrainManager
+        self.task = task
+
+        if self.task == "S2T":
+            assert isinstance(self.encoder, TransformerEncoder)
+            assert isinstance(self.decoder, TransformerDecoder)
 
     @property
     def loss_function(self):
@@ -71,7 +77,7 @@ class Model(nn.Module):
         loss_type, label_smoothing, ctc_weight = cfg
         if loss_type == "crossentropy-ctc":
             loss_function = XentCTCLoss(pad_index=self.pad_index,
-                                        bos_index=self.bos_index,
+                                        bos_index=self.bos_index,  # bos -> blank
                                         smoothing=label_smoothing,
                                         ctc_weight=ctc_weight)
         elif loss_type == "crossentropy":
@@ -94,7 +100,7 @@ class Model(nn.Module):
         """
         if return_type is None:
             raise ValueError("Please specify return_type: "
-                             "{`loss`, `encode`, `decode`}.")
+                             "{`loss`, `encode`, `decode`, `decode_ctc`}.")
 
         if return_type == "loss":
             assert self.loss_function is not None
@@ -127,7 +133,6 @@ class Model(nn.Module):
             return_tuple[-1] = n_correct
 
         elif return_type == "encode":
-            kwargs["pad"] = True  # TODO: only if multi-gpu
             encoder_output, encoder_hidden, src_mask = self._encode(**kwargs)
 
             # return encoder outputs
@@ -192,15 +197,18 @@ class Model(nn.Module):
                 **_kwargs) -> Tuple[Tensor, Tensor, Tensor]:
         """
         Encodes the source sentence.
+        Note: this is called after DataParallel
 
-        :param src:
+        :param src: spectrogram if task == "S2T" else one-hot encoded sequence
         :param src_length:
-        :param src_mask:
+        :param src_mask: None if task == "S2T" else bool tensor in shape
+            (batch_size, 1, seq_len)
         :return:
             - encoder_outputs
             - hidden_concat
             - src_mask
         """
+        assert _kwargs["task"] == self.task  # check batch type
         return self.encoder(self.src_embed(src), src_length, src_mask, **_kwargs)
 
     def _decode(
@@ -251,7 +259,7 @@ class Model(nn.Module):
 
         :return: string representation
         """
-        return (f"{self.__class__.__name__}(\n"
+        return (f"{self.__class__.__name__}(task={self.task},\n"
                 f"\tencoder={self.encoder},\n"
                 f"\tdecoder={self.decoder},\n"
                 f"\tsrc_embed={self.src_embed},\n"
@@ -298,25 +306,26 @@ def build_model(cfg: dict = None,
     task = "MT" if src_vocab is not None else "S2T"
 
     trg_pad_index = trg_vocab.pad_index
-    src_pad_index = src_vocab.pad_index if src_vocab is not None else trg_pad_index
+    src_pad_index = src_vocab.pad_index if task == "MT" else trg_pad_index
 
-    src_embed = Embeddings(**enc_cfg["embeddings"],
-                           vocab_size=len(src_vocab),
-                           padding_idx=src_pad_index) if src_vocab is not None else None
+    if task == "MT":
+        src_embed = Embeddings(**enc_cfg["embeddings"],
+                               vocab_size=len(src_vocab),
+                               padding_idx=src_pad_index)
+    else:
+        src_embed = nn.Identity()
 
     # this ties source and target embeddings for softmax layer tying, see further below
     if cfg.get("tied_embeddings", False):
-        if src_vocab == trg_vocab:
+        if task == "MT" and src_vocab == trg_vocab:
             trg_embed = src_embed  # share embeddings for src and trg
         else:
             raise ConfigurationError(
                 "Embedding cannot be tied since vocabularies differ.")
     else:
-        trg_embed = Embeddings(
-            **dec_cfg["embeddings"],
-            vocab_size=len(trg_vocab),
-            padding_idx=trg_pad_index,
-        )
+        trg_embed = Embeddings(**dec_cfg["embeddings"],
+                               vocab_size=len(trg_vocab),
+                               padding_idx=trg_pad_index)
 
     # build encoder
     enc_dropout = enc_cfg.get("dropout", 0.0)
@@ -372,6 +381,7 @@ def build_model(cfg: dict = None,
         trg_embed=trg_embed,
         src_vocab=src_vocab,
         trg_vocab=trg_vocab,
+        task=task,
     )
 
     # tie softmax layer with trg embeddings
@@ -390,7 +400,7 @@ def build_model(cfg: dict = None,
     # initialize embeddings from file
     enc_embed_path = enc_cfg["embeddings"].get("load_pretrained", None)
     dec_embed_path = dec_cfg["embeddings"].get("load_pretrained", None)
-    if enc_embed_path:
+    if enc_embed_path and task == "MT":
         logger.info("Loading pretrained src embeddings...")
         model.src_embed.load_from_file(Path(enc_embed_path), src_vocab)
     if dec_embed_path and not cfg.get("tied_embeddings", False):

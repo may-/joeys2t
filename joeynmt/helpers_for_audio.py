@@ -2,7 +2,7 @@
 """
 Collection of helper functions for audio processing
 """
-
+import logging
 import io
 import sys
 from pathlib import Path
@@ -15,6 +15,9 @@ import torchaudio.compliance.kaldi as ta_kaldi
 import torchaudio.sox_effects as ta_sox
 
 from joeynmt.constants import PAD_ID
+
+
+logger = logging.getLogger(__name__)
 
 
 # from fairseq
@@ -112,9 +115,11 @@ def get_features(root_path: Path, fbank_path: str) -> np.ndarray:
     elif len(extra) == 2:
         assert _path.suffix == ".zip"
         extra = [int(i) for i in extra]
-        features = _get_features_from_zip(_path, extra[0], extra[1])
+        features = _get_features_from_zip(_path, extra[0], extra[1])  #fbank80.zip:79804284622:450368
     else:
         raise ValueError(f"Invalid path: {root_path / fbank_path}")
+
+    assert len(features.shape) == 2, "spectrogram must be a 2-D array."
     return features
 
 
@@ -134,10 +139,7 @@ def pad_features(
       - features np.ndarray, (batch_size, src_len, embed_size)
       - lengths List[int], (batch_size)
     """
-    max_len = max([len(f) for f in feat_list] + [10])
-    #TODO: minimum length = 10. Since 1d-Conv raise an error if the input length
-    # is less than the kernel size. here hard-coded, but it should be handled
-    # with the kernel-size specification in config file!
+    max_len = max([int(f.shape[0]) for f in feat_list])
     batch_size = len(feat_list)
 
     # encoder input has shape of (batch_size, src_len, embed_size)
@@ -148,6 +150,7 @@ def pad_features(
 
     for i, f in enumerate(feat_list):
         length = min(int(f.shape[0]), max_len)
+        assert length > 0, "empty feature!"
         features[i, :length, :] = f[:length, :]
         lengths.append(length)
 
@@ -156,8 +159,8 @@ def pad_features(
         features = features[:, :m, :]
 
     # validation
-    assert len(lengths) == features.shape[0]
-    #assert max(lengths) == features.shape[1]
+    assert max(lengths) == features.shape[1]
     assert embed_size == features.shape[2]
+    assert sum(lengths) > 0
 
     return features, lengths

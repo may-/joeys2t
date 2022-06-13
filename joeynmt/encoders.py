@@ -2,6 +2,7 @@
 """
 Various encoders
 """
+import logging
 from typing import List, Tuple
 
 import torch
@@ -11,6 +12,9 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from joeynmt.constants import PAD_ID
 from joeynmt.helpers import freeze_params, lengths_to_padding_mask, pad
 from joeynmt.transformer_layers import PositionalEncoding, TransformerEncoderLayer
+
+
+logger = logging.getLogger(__name__)
 
 
 class Encoder(nn.Module):
@@ -266,11 +270,14 @@ class TransformerEncoder(Encoder):
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
-        if kwargs.get('pad', False) and "src_max_len" in kwargs and self.subsample:
-            x = pad(x, kwargs["src_max_len"], pad_index=self.pad_index, dim=1)
-            mask = pad(mask, kwargs["src_max_len"], pad_index=self.pad_index, dim=-1)
+        if kwargs.get('repad', False) and "src_max_len" in kwargs and self.subsample:
+            # re-pad `x` and `mask` so that all seqs in parallel gpus have the same len!
+            src_max_len = int(self.subsampler.get_out_seq_lens_tensor(
+                torch.tensor(kwargs["src_max_len"]).float()).item())
+            x = pad(x, src_max_len, pad_index=self.pad_index, dim=1)
+            mask = pad(mask, src_max_len, pad_index=self.pad_index, dim=-1)
         assert src_length.size() == (x.size(0), ), (src_length.size(), x.size())
-        assert mask is not None
+        assert mask.size() == (x.size(0), 1, x.size(1)), (mask.size(), x.size())
         return x, None, mask
 
     def __repr__(self):
@@ -324,6 +331,7 @@ class Conv1dSubsampler(nn.Module):
     def forward(self, src_tokens, src_lengths):
         # reshape after DataParallel batch split
         max_len = torch.max(src_lengths).item()
+        assert max_len > 0, "empty batch!"
         if src_tokens.size(1) != max_len:
             src_tokens = src_tokens[:, :max_len, :]
         assert src_tokens.size(1) == max_len, (src_tokens.size(), max_len, src_lengths)

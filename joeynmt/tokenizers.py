@@ -326,12 +326,28 @@ class SpeechProcessor:
         self.root_path = ""  # assigned later by dataset.__init__()
 
     def __call__(self, line: str, is_train: bool = False) -> np.ndarray:
-        """get features"""
-        # lookup
-        item = get_features(self.root_path, line)
+        """
+        get features
 
-        if is_train and self._filter_by_length(len(item)):
+        :param line: path to audio file or pre-extracted features
+        :param is_train:
+
+        :return: spectrogram in shape (num_frames, num_freq)
+        """
+        # lookup
+        item = get_features(self.root_path, line)  # shape = (num_frames, num_freq)
+
+        num_frames, num_freq = item.shape
+        assert num_freq == self.num_freq
+
+        if self._filter_too_short_item(num_frames):
+            # A too short sequence cannot be convolved!
+            # -> filter out anyway even in test-dev set.
             return None
+        if is_train and self._filter_too_long_item(num_frames):
+            # Don't use too long sequence in training.
+            return None
+
         # cmvn / specaugment
         if self.cmvn and self.cmvn.before:
             item = self.cmvn(item)
@@ -341,8 +357,11 @@ class SpeechProcessor:
             item = self.cmvn(item)
         return item
 
-    def _filter_by_length(self, length: int) -> bool:
-        return length > self.max_length > 0 or self.min_length > length > 0
+    def _filter_too_short_item(self, length: int) -> bool:
+        return self.min_length > length > 0
+
+    def _filter_too_long_item(self, length: int) -> bool:
+        return length > self.max_length > 0
 
     def __repr__(self):
         return (f"{self.__class__.__name__}("
