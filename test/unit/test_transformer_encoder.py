@@ -49,7 +49,7 @@ class TestTransformerEncoder(TensorTestCase):
         x_length = torch.Tensor([time_dim] * batch_size).int()
         mask = torch.ones([batch_size, 1, time_dim]) == 1
 
-        output, hidden = encoder(x, x_length, mask)
+        output, hidden, _ = encoder(x, x_length, mask)
 
         self.assertEqual(output.shape,
                          torch.Size([batch_size, time_dim, self.hidden_size]))

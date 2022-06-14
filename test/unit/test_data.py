@@ -16,6 +16,7 @@ class TestData(unittest.TestCase):
 
         # minimal data config
         self.data_cfg = {
+            "task": "MT",
             "train": self.train_path,
             "dev": self.dev_path,
             "src": {

@@ -19,6 +19,7 @@ class TestPlaintextDataset(unittest.TestCase):
 
         # minimal data config
         self.data_cfg = {
+            "task": "MT",
             "train": self.train_path,
             "dev": self.dev_path,
             "test": self.test_path,
@@ -197,6 +198,7 @@ class TestTsvDataset(unittest.TestCase):
 
         # minimal data config
         self.data_cfg = {
+            "task": "MT",
             "train": (train_file.parent / train_file.stem).as_posix(),
             "dev": (dev_file.parent / dev_file.stem).as_posix(),
             "test": (test_file.parent / test_file.stem).as_posix(),

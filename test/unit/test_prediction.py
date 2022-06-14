@@ -35,6 +35,7 @@ class TestPrediction(unittest.TestCase):
         torch.manual_seed(seed)
         self.cfg = {
             "data": {
+                "task": "MT",
                 "train": "test/data/toy/train",  # needed for vocab
                 "test": "test/data/toy/test",
                 "src": {

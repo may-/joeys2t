@@ -74,7 +74,7 @@ class TestTransformerDecoder(TensorTestCase):
         decoder_hidden = None  # unused
         unroll_steps = None  # unused
 
-        output, states, att, _ = decoder(
+        output, states, att, _, _ = decoder(
             trg_embed,
             encoder_output,
             encoder_hidden,

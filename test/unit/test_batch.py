@@ -12,6 +12,7 @@ class TestBatch(TensorTestCase):
     def setUp(self):
         # minimal data config
         data_cfg = {
+            "task": "MT",
             "train": "test/data/toy/train",
             "dev": "test/data/toy/dev",
             "src": {

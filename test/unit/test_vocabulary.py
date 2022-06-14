@@ -14,6 +14,7 @@ class TestVocabulary(unittest.TestCase):
     def setUp(self):
         self.voc_limit = 1000
         self.cfg = {
+            "task": "MT",
             "train": "test/data/toy/train",
             "src": {
                 "lang": "de",
