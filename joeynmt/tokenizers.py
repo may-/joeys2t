@@ -53,6 +53,8 @@ class BasicTokenizer:
                 from sacremoses import (  # pylint: disable=import-outside-toplevel
                     MosesDetokenizer, MosesPunctNormalizer, MosesTokenizer,
                 )
+                # sacremoses package has to be installed.
+                # https://github.com/alvations/sacremoses
             except ImportError as e:
                 logger.error(e)
                 raise ImportError from e

@@ -13,7 +13,6 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import List, Tuple
 
-import numpy as np
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -169,8 +168,9 @@ class TrainManager:
             is_max_update=False,
             total_tokens=0,
             best_ckpt_iter=0,
-            best_ckpt_score=np.inf if self.minimize_metric else -np.inf,
+            best_ckpt_score=float("inf") if self.minimize_metric else float("-inf"),
             minimize_metric=self.minimize_metric,
+            total_correct=0,
         )
 
         # fp16
@@ -257,6 +257,8 @@ class TrainManager:
             amp.state_dict() if self.fp16 else None,
             "train_iter_state":
             (self.train_iter.batch_sampler.sampler.generator.get_state()),
+            "total_correct":
+            self.stats.total_correct,
         }
         torch.save(state, model_path.as_posix())
 
@@ -353,6 +355,7 @@ class TrainManager:
             assert "train_iter_state" in model_checkpoint
             self.stats.steps = model_checkpoint["steps"]
             self.stats.total_tokens = model_checkpoint["total_tokens"]
+            self.stats.total_correct = model_checkpoint.get("total_correct", 0)
             self.train_iter_state = model_checkpoint["train_iter_state"]
         else:
             # reset counters if explicitly 'train_iter_state: True' in config
@@ -458,14 +461,13 @@ class TrainManager:
                 start = time.time()
                 total_valid_duration = 0
                 start_tokens = self.stats.total_tokens
+                start_correct = self.stats.total_correct
                 self.model.zero_grad()
                 epoch_loss = 0
                 total_batch_loss = 0
                 total_nll_loss = 0
                 total_ctc_loss = 0
-                total_n_correct = 0
                 total_nseqs = 0
-                total_ntokens = 0
 
                 # subsample train data each epoch
                 if train_data.random_subset > 0:
@@ -486,17 +488,18 @@ class TrainManager:
                     batch.sort_by_src_length()
 
                     # get batch loss
+
                     (norm_batch_loss, norm_nll_loss, norm_ctc_loss,
                      n_correct) = self._train_step(batch)
                     total_batch_loss += norm_batch_loss
                     total_nll_loss += norm_nll_loss if norm_nll_loss is not None else 0
                     total_ctc_loss += norm_ctc_loss if norm_ctc_loss is not None else 0
-                    total_n_correct += n_correct
 
                     # increment seq/token counter
                     total_nseqs += batch.nseqs
                     total_ntokens += batch.ntokens
                     self.stats.total_tokens += batch.ntokens
+                    self.stats.total_correct += n_correct
 
                     # update!
                     if (i + 1) % self.batch_multiplier == 0:
@@ -527,7 +530,7 @@ class TrainManager:
                         if self.stats.steps % self.logging_freq == 0:
                             elapsed = time.time() - start - total_valid_duration
                             elapsed_tok = self.stats.total_tokens - start_tokens
-                            token_accuracy = total_n_correct / elapsed_tok
+                            elapsed_correct = self.stats.total_correct - start_correct
                             self.tb_writer.add_scalar("train/batch_loss",
                                                       total_batch_loss,
                                                       self.stats.steps)
@@ -539,7 +542,8 @@ class TrainManager:
                                 self.tb_writer.add_scalar("train/batch_ctc_loss",
                                                           total_ctc_loss,
                                                           self.stats.steps)
-                            self.tb_writer.add_scalar("train/batch_acc", token_accuracy,
+                            self.tb_writer.add_scalar("train/batch_acc",
+                                                      elapsed_correct / elapsed_tok,
                                                       self.stats.steps)
                             logger.info(
                                 "Epoch %3d, "
@@ -551,20 +555,20 @@ class TrainManager:
                                 epoch_no + 1,
                                 self.stats.steps,
                                 total_batch_loss,
-                                token_accuracy,
+                                elapsed_correct / elapsed_tok,
                                 elapsed_tok / elapsed,
                                 self.optimizer.param_groups[0]["lr"],
                             )
                             start = time.time()
                             total_valid_duration = 0
                             start_tokens = self.stats.total_tokens
+                            start_correct = self.stats.total_correct
 
                         # update epoch_loss
                         epoch_loss += total_batch_loss  # accumulate loss
                         total_batch_loss = 0  # reset batch loss
                         total_nll_loss = 0
                         total_ctc_loss = 0
-                        total_n_correct = 0  # reset batch accuracy
 
                         # validate on the entire dev set
                         if self.stats.steps % self.validation_freq == 0:
@@ -640,7 +644,7 @@ class TrainManager:
             self.batch_multiplier) if ctc_loss is not None else None
 
         # sum over multiple gpus
-        n_correct_tokens = batch.normalize(correct_tokens, "sum", self.n_gpu)
+        sum_correct_tokens = batch.normalize(correct_tokens, "sum", self.n_gpu)
 
         # accumulate gradients
         if self.fp16:
@@ -649,12 +653,10 @@ class TrainManager:
         else:
             norm_batch_loss.backward()
 
-        return (
-            norm_batch_loss.item(),
-            norm_nll_loss.item() if norm_nll_loss is not None else None,
-            norm_ctc_loss.item() if norm_ctc_loss is not None else None,
-            n_correct_tokens.item(),
-        )
+        return (norm_batch_loss.item(),
+                norm_nll_loss.item() if norm_nll_loss is not None else None,
+                norm_ctc_loss.item() if norm_ctc_loss is not None else None,
+                sum_correct_tokens.item())
 
     def _validate(self, valid_data: Dataset):
         if valid_data.random_subset > 0:  # subsample validation set each valid step
@@ -804,8 +806,9 @@ class TrainManager:
             is_max_update: bool = False,
             total_tokens: int = 0,
             best_ckpt_iter: int = 0,
-            best_ckpt_score: float = np.inf,
+            best_ckpt_score: float = float("inf"),
             minimize_metric: bool = True,
+            total_correct: int = 0,
         ) -> None:
             self.steps = steps  # global update step counter
             self.is_min_lr = is_min_lr  # stop by reaching learning rate minimum
@@ -814,6 +817,7 @@ class TrainManager:
             self.best_ckpt_iter = best_ckpt_iter  # store iteration point of best ckpt
             self.best_ckpt_score = best_ckpt_score  # initial values for best scores
             self.minimize_metric = minimize_metric  # minimize or maximize score
+            self.total_correct = total_correct  # number of correct tokens seen so far
 
         def is_best(self, score):
             if self.minimize_metric:
