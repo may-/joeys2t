@@ -137,7 +137,7 @@ We also updated the [documentation](https://joeynmt.readthedocs.io) thoroughly f
 For details, follow the tutorials in [notebooks](notebooks) dir.
 #### v2.0
 - [quick-start-with-joeynmt2](notebooks/quick-start-with-joeynmt2.ipynb)
-- [speech-to-text-with-joeynmt2](https://github.com/may-/joeynmt/blob/joeyS2T/notebooks/speech-to-text-with-joeynmt2.ipynb) 
+- [speech-to-text-with-joeynmt2](https://github.com/may-/joeynmt/blob/joeyS2T/notebooks/joeyS2T_ASR_demo.ipynb) 
 
 #### v1.x
 - [demo notebook](notebooks/joey_demo.ipynb)
