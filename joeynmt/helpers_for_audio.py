@@ -49,7 +49,7 @@ def extract_fbank_features(waveform: torch.FloatTensor,
     # pylint: disable=inconsistent-return-statements
 
     if output_path is not None and output_path.is_file() and not overwrite:
-        return
+        return np.load(output_path.as_posix())
 
     _waveform = _convert_to_mono(waveform, sample_rate)
     _waveform = waveform * (2**15)  # Kaldi compliance: 16-bit signed integers
@@ -63,8 +63,8 @@ def extract_fbank_features(waveform: torch.FloatTensor,
     if output_path is not None:
         np.save(output_path.as_posix(), features)
         assert output_path.is_file(), output_path
-    else:
-        return features
+
+    return features
 
 
 # from fairseq
@@ -115,7 +115,7 @@ def get_features(root_path: Path, fbank_path: str) -> np.ndarray:
     elif len(extra) == 2:
         assert _path.suffix == ".zip"
         extra = [int(i) for i in extra]
-        features = _get_features_from_zip(_path, extra[0], extra[1])  #fbank80.zip:79804284622:450368
+        features = _get_features_from_zip(_path, extra[0], extra[1])
     else:
         raise ValueError(f"Invalid path: {root_path / fbank_path}")
 

@@ -190,7 +190,7 @@ def predict(
             else [])
     gen_duration = time.time() - gen_start_time
 
-    assert total_nseqs == len(data), (total_nseqs, len(data))
+    assert len(valid_iter.dataset) == total_nseqs == len(data), (len(valid_iter.dataset), total_nseqs, len(data))
     assert len(all_outputs) == len(data) * n_best, (len(all_outputs), len(data), n_best)
 
     if compute_loss:
@@ -267,7 +267,8 @@ def predict(
                 if "eval" not in data.tokenizer:  # better to handle this in data.py?
                     data.tokenizer["eval"] = EvaluationTokenizer(
                         lowercase=sacrebleu_cfg.get("lowercase", False),
-                        tokenize=sacrebleu_cfg.get("tokenize", "13a"))
+                        tokenize=sacrebleu_cfg.get("tokenize", "13a"),
+                        no_punc=sacrebleu_cfg.get("no_punc", False))  # WER w/o punc
                 valid_scores[eval_metric] = wer(valid_hyp_1best, valid_ref,
                                                 data.tokenizer["eval"])
 

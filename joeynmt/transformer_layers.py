@@ -119,7 +119,7 @@ class PositionwiseFeedForward(nn.Module):
         ff_size: int,
         dropout: float = 0.1,
         alpha: float = 1.0,
-        layer_norm: str = "post",
+        layer_norm: str = "pre",
     ) -> None:
         """
         Initializes position-wise feed-forward layer.
@@ -212,7 +212,7 @@ class TransformerEncoderLayer(nn.Module):
         num_heads: int = 0,
         dropout: float = 0.1,
         alpha: float = 1.0,
-        layer_norm: str = "post",
+        layer_norm: str = "pre",
     ) -> None:
         """
         A single Transformer encoder layer.
@@ -286,7 +286,7 @@ class TransformerDecoderLayer(nn.Module):
         num_heads: int = 0,
         dropout: float = 0.1,
         alpha: float = 1.0,
-        layer_norm: str = "post",
+        layer_norm: str = "pre",
     ) -> None:
         """
         Represents a single Transformer decoder layer.
@@ -385,3 +385,161 @@ class TransformerDecoderLayer(nn.Module):
         if return_attention:
             return out, att
         return out, None
+
+
+class ConvolutionModule(nn.Module):
+    """Convolution block used in the conformer block"""
+
+    def __init__(
+        self,
+        hidden_size: int,
+        channels: int,
+        depthwise_kernel_size: int,
+        dropout: float,
+    ):
+        """
+        Args:
+            hidden_size: hidden dimension
+            channels: Number of channels in depthwise conv layers
+            depthwise_kernel_size: Depthwise conv layer kernel size
+            dropout: dropout value
+        """
+        super(ConvolutionModule, self).__init__()
+        assert (
+            depthwise_kernel_size - 1
+        ) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
+        self.layer_norm = nn.LayerNorm(hidden_size, eps=1e-6)
+        self.pointwise_conv1 = nn.Conv1d(
+            hidden_size,
+            2 * channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+        self.glu = nn.GLU(dim=1)
+        self.depthwise_conv = nn.Conv1d(
+            channels,
+            channels,
+            depthwise_kernel_size,
+            stride=1,
+            padding=(depthwise_kernel_size - 1) // 2,
+            groups=channels,
+        )
+        self.batch_norm = nn.BatchNorm1d(channels)
+        self.swish = nn.Hardswish()
+        self.pointwise_conv2 = nn.Conv1d(
+            channels,
+            hidden_size,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x) -> torch.Tensor:
+        x = self.layer_norm(x)
+        # exchange the temporal dimension and the feature dimension
+        x = x.transpose(1, 2)
+
+        # GLU mechanism
+        x = self.pointwise_conv1(x)  # (batch, 2*channel, dim)
+        x = self.glu(x)  # (batch, channel, dim)
+
+        # 1D Depthwise Conv
+        x = self.depthwise_conv(x)
+        x = self.batch_norm(x)
+        x = self.swish(x)
+
+        x = self.pointwise_conv2(x)
+        x = self.dropout(x)
+        return x.transpose(1, 2)
+
+
+class ConformerEncoderLayer(torch.nn.Module):
+    """Conformer block based on https://arxiv.org/abs/2005.08100."""
+
+    def __init__(
+        self,
+        size: int = 512,
+        ff_size: int = 2048,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+        depthwise_conv_kernel_size: int = 31,
+        alpha: float = 1.0,
+        layer_norm: str = "pre",
+    ):
+        super(ConformerEncoderLayer, self).__init__()
+
+        self.initial_feed_forward = PositionwiseFeedForward(
+            size,
+            ff_size=ff_size,
+            dropout=dropout,
+            alpha=alpha,
+            layer_norm=layer_norm,
+        )
+
+        self.src_att_layer_norm = nn.LayerNorm(size, eps=1e-6)
+        self.src_att_dropout = nn.Dropout(dropout)
+        self.src_src_att = MultiHeadedAttention(num_heads, size, dropout=dropout)
+
+        self.conv_module = ConvolutionModule(
+            hidden_size=size,
+            channels=size,
+            depthwise_kernel_size=depthwise_conv_kernel_size,
+            dropout=dropout,
+        )
+
+        self.final_feed_forward = PositionwiseFeedForward(
+            size,
+            ff_size=ff_size,
+            dropout=dropout,
+            alpha=alpha,
+            layer_norm=layer_norm,
+        )
+        self.final_layer_norm = nn.LayerNorm(size, eps=1e-6)
+
+        self.alpha = alpha
+        self.size = size
+
+        self._layer_norm_position = layer_norm
+        assert self._layer_norm_position in {"pre", "post"}
+
+    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
+        """
+        Forward pass for a single conformer encoder layer.
+
+        :param x: layer input
+        :param mask: input mask
+        :return: output tensor
+        """
+        residual = x
+        x = self.initial_feed_forward(x)
+        x = 0.5 * x + residual
+
+        residual = x
+        if self._layer_norm_position == "pre":
+            x = self.src_att_layer_norm(x)
+
+        x, _ = self.src_src_att(x, x, x, mask)
+        x = self.src_att_dropout(x) + self.alpha * residual
+
+        if self._layer_norm_position == "post":
+            x = self.src_att_layer_norm(x)
+
+        residual = x
+        x = x.transpose(0, 1)  # [T, B, C] to [B, T, C]
+        x = self.conv_module(x)
+        x = x.transpose(0, 1)   # [B, T, C] to [T, B, C]
+        x = x + self.alpha * residual
+
+        # feed forward layer
+        residual = x
+        if self._layer_norm_position == "pre":
+            x = self.final_layer_norm(x)
+
+        x = self.final_feed_forward(x)
+        x = 0.5 * x + residual
+
+        if self._layer_norm_position == "post":
+            x = self.final_layer_norm(x)
+        return x

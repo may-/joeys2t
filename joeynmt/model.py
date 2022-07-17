@@ -13,7 +13,7 @@ from torch import Tensor, nn
 
 from joeynmt.decoders import Decoder, RecurrentDecoder, TransformerDecoder
 from joeynmt.embeddings import Embeddings
-from joeynmt.encoders import Encoder, RecurrentEncoder, TransformerEncoder
+from joeynmt.encoders import ConformerEncoder, Encoder, RecurrentEncoder, TransformerEncoder
 from joeynmt.helpers import ConfigurationError
 from joeynmt.initialization import initialize_model
 from joeynmt.loss import XentCTCLoss, XentLoss
@@ -37,7 +37,7 @@ class Model(nn.Module):
         trg_embed: Embeddings,
         src_vocab: Vocabulary,
         trg_vocab: Vocabulary,
-        task: str,
+        task: str = "MT",
     ) -> None:
         """
         Create a new encoder-decoder model
@@ -230,7 +230,7 @@ class Model(nn.Module):
         :param encoder_hidden: last encoder state for decoder initialization
         :param src_mask: source mask, 1 at valid tokens
         :param trg_input: target inputs
-        :param unroll_steps: number of steps to unrol the decoder for
+        :param unroll_steps: number of steps to unroll the decoder for
         :param decoder_hidden: decoder hidden state (optional)
         :param att_vector: previous attention vector (optional)
         :param trg_mask: mask for target steps
@@ -331,9 +331,9 @@ def build_model(cfg: dict = None,
     enc_dropout = enc_cfg.get("dropout", 0.0)
     enc_emb_dropout = enc_cfg["embeddings"].get("dropout", enc_dropout)
     enc_type = enc_cfg.get("type", "transformer")
-    if enc_type not in ["transformer", "recurrent"]:
+    if enc_type not in ["recurrent", "transformer", "conformer"]:
         raise ConfigurationError(
-            "Invalid encoder type. Valid options: {`transformer`, `recurrent`}.")
+            "Invalid encoder type. Valid options: {`recurrent`, `transformer`, `conformer`}.")
     if enc_type == "transformer":
         if task == "MT":
             assert enc_cfg["embeddings"]["embedding_dim"] == enc_cfg["hidden_size"], (
@@ -346,6 +346,14 @@ def build_model(cfg: dict = None,
                                      emb_size=emb_size,
                                      emb_dropout=enc_emb_dropout,
                                      pad_index=src_pad_index)
+    elif enc_type == "conformer":
+        assert task == "S2T", "Conformer model can be used only for S2T task."
+        emb_size = enc_cfg["embeddings"]["embedding_dim"]
+        #TODO: check if emb_size == num_freq
+        encoder = ConformerEncoder(**enc_cfg,
+                                   emb_size=emb_size,
+                                   emb_dropout=enc_emb_dropout,
+                                   pad_index=src_pad_index)
     else:
         assert task == "MT", "RNN model not supported for s2t task. use transformer."
         encoder = RecurrentEncoder(**enc_cfg,
@@ -356,7 +364,7 @@ def build_model(cfg: dict = None,
     dec_dropout = dec_cfg.get("dropout", 0.0)
     dec_emb_dropout = dec_cfg["embeddings"].get("dropout", dec_dropout)
     dec_type = dec_cfg.get("type", "transformer")
-    if dec_type not in ["transformer", "recurrent"]:
+    if dec_type not in ["recurrent", "transformer"]:
         raise ConfigurationError(
             "Invalid decoder type. Valid options: {`transformer`, `recurrent`}.")
     if dec_type == "transformer":

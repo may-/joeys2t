@@ -153,25 +153,17 @@ class Batch:
         for new_pos, old_pos in enumerate(perm_index.cpu().numpy()):
             rev_index[old_pos] = new_pos
 
-        sorted_src_length = self.src_length[perm_index]
-        sorted_src = self.src[perm_index]
-        self.src = sorted_src
-        self.src_length = sorted_src_length
+        self.src = self.src[perm_index]
+        self.src_length = self.src_length[perm_index]
 
         if self.src_mask is not None:  # if task != "S2T"
-            sorted_src_mask = self.src_mask[perm_index]
-            self.src_mask = sorted_src_mask
+            self.src_mask = self.src_mask[perm_index]
 
         if self.has_trg:
-            sorted_trg_input = self.trg_input[perm_index]
-            sorted_trg_length = self.trg_length[perm_index]
-            sorted_trg_mask = self.trg_mask[perm_index]
-            sorted_trg = self.trg[perm_index]
-
-            self.trg_input = sorted_trg_input
-            self.trg_mask = sorted_trg_mask
-            self.trg_length = sorted_trg_length
-            self.trg = sorted_trg
+            self.trg_input = self.trg_input[perm_index]
+            self.trg_mask = self.trg_mask[perm_index]
+            self.trg_length = self.trg_length[perm_index]
+            self.trg = self.trg[perm_index]
 
         assert max(rev_index) < len(rev_index), rev_index
         return rev_index

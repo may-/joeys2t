@@ -14,7 +14,12 @@ from subword_nmt import apply_bpe
 
 from joeynmt.constants import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, UNK_TOKEN
 from joeynmt.data_augmentation import CMVN, SpecAugment
-from joeynmt.helpers import ConfigurationError, remove_extra_spaces, unicode_normalize
+from joeynmt.helpers import (
+    ConfigurationError,
+    remove_extra_spaces,
+    remove_punctuation,
+    unicode_normalize
+)
 from joeynmt.helpers_for_audio import get_features
 
 logger = logging.getLogger(__name__)
@@ -346,9 +351,14 @@ class SpeechProcessor:
             # A too short sequence cannot be convolved!
             # -> filter out anyway even in test-dev set.
             return None
-        if is_train and self._filter_too_long_item(num_frames):
+        if self._filter_too_long_item(num_frames):
             # Don't use too long sequence in training.
-            return None
+            if is_train:
+                return None
+            else:
+                item = item[:self.max_length, :]
+                num_frames = item.shape[0]
+                assert num_frames <= self.max_length
 
         # cmvn / specaugment
         if self.cmvn and self.cmvn.before:
@@ -384,7 +394,7 @@ class EvaluationTokenizer(BasicTokenizer):
     """
     ALL_TOKENIZER_TYPES = ["none", "13a", "intl", "zh", "ja-mecab"]
 
-    def __init__(self, lowercase: bool = False, tokenize: str = "13a"):
+    def __init__(self, lowercase: bool = False, tokenize: str = "13a", **kwargs):
         super().__init__(level="word",
                          lowercase=lowercase,
                          normalize=False,
@@ -393,14 +403,21 @@ class EvaluationTokenizer(BasicTokenizer):
 
         assert tokenize in self.ALL_TOKENIZER_TYPES, f"`{tokenize}` not supported."
         self.tokenizer = _get_tokenizer(tokenize)()
+        self.no_punc = kwargs.get("no_punc", False)
 
     def __call__(self, raw_input: str, is_train: bool = False) -> List[str]:
         tokenized = self.tokenizer(raw_input)
+
+        # Remove punctuation (apply this after tokenization!)
+        if self.no_punc:
+            tokenized = remove_punctuation(tokenized, space=self.SPACE)
         return tokenized.split()
 
     def __repr__(self):
         return (f"{self.__class__.__name__}(level={self.level}, "
-                f"lowercase={self.lowercase}, tokenizer={self.tokenizer})")
+                f"lowercase={self.lowercase}, "
+                f"tokenizer={self.tokenizer}, "
+                f"no_punc={self.no_punc})")
 
 
 def _build_tokenizer(cfg: Dict) -> BasicTokenizer:
@@ -460,7 +477,7 @@ def _build_tokenizer(cfg: Dict) -> BasicTokenizer:
 
 
 def build_tokenizer(data_cfg: Dict) -> Dict[str, BasicTokenizer]:
-    task = data_cfg["task"].upper()
+    task = data_cfg.get("task", "MT").upper()
     src_lang = data_cfg["src"]["lang"] if task == "MT" else "src"
     trg_lang = data_cfg["trg"]["lang"] if task == "MT" else "trg"
     tokenizer = {

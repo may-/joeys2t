@@ -95,6 +95,7 @@ class BaseDataset(Dataset):
 
     def get_list(self,
                  lang: str,
+                 postproccessed: bool = False,
                  tokenized: bool = False) -> Union[List[str], List[List[str]]]:
         """get data column-wise."""
         raise NotImplementedError
@@ -102,12 +103,13 @@ class BaseDataset(Dataset):
     @property
     def src(self) -> List[str]:
         """get detokenized preprocessed data in src language."""
-        return self.get_list(self.src_lang, tokenized=False)
+        return self.get_list(self.src_lang, postproccessed=False, tokenized=False)
 
     @property
     def trg(self) -> List[str]:
         """get detokenized preprocessed data in trg language."""
-        return self.get_list(self.trg_lang, tokenized=False) if self.has_trg else []
+        return self.get_list(self.trg_lang, postproccessed=False, tokenized=False) \
+            if self.has_trg else []
 
     def __len__(self) -> int:
         raise NotImplementedError
@@ -192,6 +194,9 @@ class PlaintextDataset(BaseDataset):
         line = self._look_up_item(idx, lang)
         is_train = self.split == "train" if is_train is None else is_train
         item = self.tokenizer[lang](line, is_train=is_train)
+
+        if item is None:
+            logger.debug("Skip {}-th instance ({}): {}".format(idx, lang, line))
         return item
 
     def _look_up_item(self, idx: int, lang: str) -> str:
@@ -206,6 +211,7 @@ class PlaintextDataset(BaseDataset):
 
     def get_list(self,
                  lang: str,
+                 postproccessed: bool = False,
                  tokenized: bool = False) -> Union[List[str], List[List[str]]]:
         """
         Return list of preprocessed sentences in the given language.
@@ -214,7 +220,9 @@ class PlaintextDataset(BaseDataset):
         item_list = []
         for idx in range(self.__len__()):
             item = self._look_up_item(idx, lang)
-            if tokenized:
+            if postproccessed:
+                item = self.tokenizer[lang].post_process(item)
+            elif tokenized:
                 item = self.tokenizer[lang](self._look_up_item(idx, lang),
                                             is_train=False)
             item_list.append(item)
@@ -305,11 +313,12 @@ class TsvDataset(BaseDataset):
         if self._initial_df is None:
             self._initial_df = self.df.copy(deep=True)
 
-            self.df = self._initial_df.sample(
-                n=self.random_subset,
-                replace=False,
-                random_state=seed,  # resample every epoch: seed += epoch_no
-            ).reset_index()
+        self.df = self._initial_df.sample(
+            n=self.random_subset,
+            replace=False,
+            random_state=seed,  # resample every epoch: seed += epoch_no
+        ).reset_index()
+
 
     def reset_random_subset(self):
         if self._initial_df is not None:
@@ -324,9 +333,15 @@ class TsvDataset(BaseDataset):
 
     def get_list(self,
                  lang: str,
+                 postproccessed: bool = False,
                  tokenized: bool = False) -> Union[List[str], List[List[str]]]:
-        return (self.df[lang].apply(self.tokenizer[lang]).to_list()
-                if tokenized else self.df[lang].to_list())
+        if postproccessed:
+            sents = self.df[lang].apply(self.tokenizer[lang].post_process).to_list()
+        elif tokenized:
+            sents = self.df[lang].apply(self.tokenizer[lang]).to_list()
+        else:
+            sents = self.df[lang].to_list()
+        return sents
 
     def __len__(self) -> int:
         return len(self.df)
@@ -380,6 +395,8 @@ class SpeechDataset(TsvDataset):
         try:
             import pandas as pd  # pylint: disable=import-outside-toplevel
 
+            # TODO: use `chunksize` for online data loading.
+            dtype = {'id': str, 'src': str, 'trg': str, 'n_frames': int}
             df = pd.read_csv(
                 file_path.as_posix(),
                 sep="\t",
@@ -388,19 +405,25 @@ class SpeechDataset(TsvDataset):
                 escapechar="\\",
                 quoting=3,
                 na_filter=False,
+                dtype=dtype,
             )
-            # TODO: use `chunksize` for online data loading.
+
+            # WARNING: instances shorter than the kernel size cannot be convolved.
+            min_length = int(self.tokenizer["src"].min_length)
+            df['n_frames'] = df[df['n_frames'] > min_length]['n_frames']
+
+            # drop invalid rows
+            df = df.replace(r'^\s*$', float("nan"), regex=True)
+            df = df.dropna()
+
             assert "src" in df.columns
 
             if "trg" not in df.columns:
                 self.has_trg = False
                 assert self.split == "test"
+
             if self.has_trg:
                 df["trg"] = df["trg"].apply(self.tokenizer["trg"].pre_process)
-
-            # drop empty row
-            df = df.replace(r'^\s*$', float("nan"), regex=True)
-            df = df.dropna()
             return df
 
         except ImportError as e:
@@ -540,13 +563,28 @@ class BaseHuggingfaceDataset(BaseDataset):
         item = self.tokenizer[lang](line[lang], is_train=is_train)
         return item
 
-    def get_list(self, lang: str, tokenized: bool = False) -> List[str]:
-        if tokenized:
-            return self.dataset.map(
-                lambda item: {f"tok_{lang}": self.tokenizer[lang](item[lang])},
-                desc=f"Tokenizing {lang}...",
-            )[f"tok_{lang}"]
-        return self.dataset[lang]
+    def get_list(self,
+                 lang: str,
+                 postproccessed: bool = False,
+                 tokenized: bool = False) -> List[str]:
+        if postproccessed:
+            if f"post_{lang}" not in self.dataset:
+                self.dataset = self.dataset.map(
+                    lambda item: {
+                        f"post_{lang}": self.tokenizer[lang].post_process(item[lang])
+                    },
+                    desc=f"Postprocessing {lang}...")
+            return self.dataset[f"post_{lang}"]
+        elif tokenized:
+            if f"tok_{lang}" not in self.dataset:
+                self.dataset = self.dataset.map(
+                    lambda item: {
+                        f"tok_{lang}": self.tokenizer[lang](item[lang], is_train=False)
+                    },
+                    desc=f"Tokenizing {lang}...")
+            return self.dataset[f"tok_{lang}"]
+        else:
+            return self.dataset[lang]
 
     def __len__(self) -> int:
         return self.dataset.num_rows

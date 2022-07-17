@@ -2,12 +2,15 @@
 """
 Loss functions
 """
+import logging
 from typing import Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.autograd import Variable
 from torch.nn.modules.loss import _Loss
+
+logger = logging.getLogger(__name__)
 
 
 class XentLoss(nn.Module):
@@ -152,6 +155,8 @@ class XentCTCLoss(XentLoss):
 
         # interpolation
         total_loss = (1.0 - self.ctc_weight) * xent_loss + self.ctc_weight * ctc_loss
+
+        assert not total_loss.isnan(), "loss has to be non-NaN value."
         assert total_loss.item() >= 0.0, "loss has to be non-negative."
         return total_loss, xent_loss, ctc_loss
 

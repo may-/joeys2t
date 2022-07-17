@@ -11,7 +11,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from joeynmt.constants import PAD_ID
 from joeynmt.helpers import freeze_params, lengths_to_padding_mask, pad
-from joeynmt.transformer_layers import PositionalEncoding, TransformerEncoderLayer
+from joeynmt.transformer_layers import ConformerEncoderLayer, PositionalEncoding, TransformerEncoderLayer
 
 
 logger = logging.getLogger(__name__)
@@ -209,7 +209,7 @@ class TransformerEncoder(Encoder):
                 num_heads=num_heads,
                 dropout=dropout,
                 alpha=kwargs.get("alpha", 1.0),
-                layer_norm=kwargs.get("layer_norm", "post"),
+                layer_norm=kwargs.get("layer_norm", "pre"),
             ) for _ in range(num_layers)
         ])
 
@@ -217,7 +217,7 @@ class TransformerEncoder(Encoder):
         self.emb_dropout = nn.Dropout(p=emb_dropout)
 
         self.layer_norm = nn.LayerNorm(hidden_size, eps=1e-6) \
-            if kwargs.get("layer_norm", "post") == "pre" else None
+            if kwargs.get("layer_norm", "pre") == "pre" else None
 
         if freeze:
             freeze_params(self)
@@ -271,14 +271,18 @@ class TransformerEncoder(Encoder):
             x = self.layer_norm(x)
 
         if kwargs.get('repad', False) and "src_max_len" in kwargs and self.subsample:
-            # re-pad `x` and `mask` so that all seqs in parallel gpus have the same len!
-            src_max_len = int(self.subsampler.get_out_seq_lens_tensor(
-                torch.tensor(kwargs["src_max_len"]).float()).item())
-            x = pad(x, src_max_len, pad_index=self.pad_index, dim=1)
-            mask = pad(mask, src_max_len, pad_index=self.pad_index, dim=-1)
+            x, mask = self._repad(x, mask, kwargs["src_max_len"])
         assert src_length.size() == (x.size(0), ), (src_length.size(), x.size())
         assert mask.size() == (x.size(0), 1, x.size(1)), (mask.size(), x.size())
         return x, None, mask
+
+    def _repad(self, x, mask, src_max_len):
+        # re-pad `x` and `mask` so that all seqs in parallel gpus have the same len!
+        src_max_len = int(self.subsampler.get_out_seq_lens_tensor(
+            torch.tensor(src_max_len).float()).item())
+        x = pad(x, src_max_len, pad_index=self.pad_index, dim=1)
+        mask = pad(mask, src_max_len, pad_index=self.pad_index, dim=-1)
+        return x, mask
 
     def __repr__(self):
         return (f"{self.__class__.__name__}(num_layers={len(self.layers)}, "
@@ -348,3 +352,74 @@ class Conv1dSubsampler(nn.Module):
         assert x.size(1) == torch.max(out_seq_lens).item(), \
             (x.size(), in_seq_len, out_seq_len, out_seq_lens)
         return x, out_seq_lens
+
+
+class ConformerEncoder(TransformerEncoder):
+    """
+    Conformer Encoder
+    """
+
+    def __init__(
+        self,
+        hidden_size: int = 512,
+        ff_size: int = 2048,
+        num_layers: int = 8,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+        emb_dropout: float = 0.1,
+        freeze: bool = False,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self._output_size = hidden_size
+
+        # build all (num_layers) layers
+        self.layers = nn.ModuleList([
+            ConformerEncoderLayer(
+                size=hidden_size,
+                ff_size=ff_size,
+                num_heads=num_heads,
+                dropout=dropout,
+                alpha=kwargs.get("alpha", 1.0),
+                layer_norm=kwargs.get("layer_norm", "pre"),
+                depthwise_conv_kernel_size=kwargs.get("depthwise_conv_kernel_size", 31)
+            ) for _ in range(num_layers)
+        ])
+
+        self.pe = PositionalEncoding(hidden_size)
+        self.emb_dropout = nn.Dropout(p=emb_dropout)
+        self.linear = nn.Linear(hidden_size, hidden_size)
+
+        if freeze:
+            freeze_params(self)
+
+        # conv1d subsampling for audio inputs
+        self.subsampler = Conv1dSubsampler(kwargs["in_channels"],
+                                           kwargs["conv_channels"], hidden_size,
+                                           kwargs.get("conv_kernel_sizes", [3, 3]))
+        self.pad_index = kwargs.get("pad_index", PAD_ID)
+        assert self.pad_index is not None
+
+    def forward(
+        self,
+        embed_src: Tensor,
+        src_length: Tensor,
+        mask: Tensor = None,
+        **kwargs,
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        x, src_length = self.subsampler(embed_src, src_length)  # always subsample
+        mask = lengths_to_padding_mask(src_length).unsqueeze(1)  # recompute src mask
+
+        x = self.pe(x)  # add position encoding to spectrogram features
+        x = self.linear(x)
+        x = self.emb_dropout(x)
+
+        for layer in self.layers:
+            x = layer(x, mask)  # T x B x C
+
+        if kwargs.get('repad', False) and "src_max_len" in kwargs:
+            x, mask = self._repad(x, mask, kwargs["src_max_len"])
+        assert src_length.size() == (x.size(0), ), (src_length.size(), x.size())
+        assert mask.size() == (x.size(0), 1, x.size(1)), (mask.size(), x.size())
+        return x, None, mask

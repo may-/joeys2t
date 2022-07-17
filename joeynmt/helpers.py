@@ -690,6 +690,8 @@ def unicode_normalize(s: str) -> str:
     apply unicodedata NFKC normalization
     - used in pre_process() in tokenizer.py
 
+    cf.) https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/tokenizers/tokenizer_ter.py
+
     :param s: input string
     :return: normalized string
     """
@@ -698,6 +700,23 @@ def unicode_normalize(s: str) -> str:
     s = s.replace("“", '"')
     s = s.replace("”", '"')
     return s
+
+
+def remove_punctuation(s: str, space: chr):
+    """
+    Remove punctuation based on Unicode category.
+    Taken from https://github.com/pytorch/fairseq/blob/main/fairseq/scoring/tokenizer.py
+    cf.) https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/tokenizers/tokenizer_ter.py
+
+    :param s: input string
+    :param space: charactor for white space (delimiter special char)
+    :return: string without punctuation
+    """
+    return space.join(
+        t
+        for t in s.split(space)
+        if not all(unicodedata.category(c)[0] == "P" for c in t)
+    )
 
 
 def lengths_to_padding_mask(lengths: Tensor) -> Tensor:

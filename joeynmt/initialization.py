@@ -120,14 +120,13 @@ def initialize_model(model: nn.Module, cfg: dict, src_padding_idx: int,
     bias_init = cfg.get("bias_initializer", "zeros")
     bias_init_weight = float(cfg.get("bias_init_weight", 0.01))
 
+    deepnet = {}
     if (init == "xavier_normal"
             and cfg["encoder"]["type"] == cfg["decoder"]["type"] == "transformer"):
         # apply `alpha`: weight factor for residual connection
-        deepnet = {
-            "xavier_normal":
-            compute_alpha_beta(cfg["encoder"]["num_layers"],
-                               cfg["decoder"]["num_layers"])
-        }
+        deepnet["xavier_normal"] = compute_alpha_beta(cfg["encoder"]["num_layers"],
+                                                      cfg["decoder"]["num_layers"])
+
         for layer in model.encoder.layers:
             layer.alpha = deepnet["xavier_normal"]["alpha"]["encoder"]
             layer.feed_forward.alpha = deepnet["xavier_normal"]["alpha"]["encoder"]

@@ -274,6 +274,7 @@ def transformer_greedy(
     output = ys[:, 1:].detach().cpu().numpy()
     scores = yv[:, 1:].detach().cpu().numpy() if return_prob else None
     attention = yt[:, 1:, :].detach().cpu().numpy() if return_attention else None
+    assert output.shape[0] == batch_size, (output.shape, batch_size)
     return output, scores, attention
 
 

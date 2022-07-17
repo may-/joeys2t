@@ -448,6 +448,9 @@ class TrainManager:
             self.batch_size * self.batch_multiplier,
         )
 
+        # detect NaN gradients
+        torch.autograd.set_detect_anomaly(True)
+
         try:
             for epoch_no in range(self.epochs):
                 logger.info("EPOCH %d", epoch_no + 1)
@@ -468,6 +471,7 @@ class TrainManager:
                 total_nll_loss = 0
                 total_ctc_loss = 0
                 total_nseqs = 0
+                total_ntokens = 0
 
                 # subsample train data each epoch
                 if train_data.random_subset > 0:
