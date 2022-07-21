@@ -82,7 +82,7 @@ System | Architecture | dev-clean | dev-other | test-clean | test-other | #param
 [Laptev etal](https://arxiv.org/abs/2005.07157) | Transformer | 10.3 | 24.0 | 11.2 | 24.9 | - | -
 [ESPnet](https://github.com/espnet/espnet/tree/master/egs2/librispeech_100/asr1#asr_transformer_win400_hop160_ctc03_lr2e-3_warmup15k_timemask5_amp_no-deterministic) | Transformer | 8.1 | 20.2 | 8.4 | 20.5 | - | -
 [ESPnet](https://github.com/espnet/espnet/tree/master/egs2/librispeech_100/asr1#asr_conformer_win400_hop160_ctc03_lr2e-3_warmup15k_timemask5_amp_no-deterministic) | Conformer | 6.3 | 17.0 | 6.5 | 17.3 | - | -
-JoeyS2T | Transformer | 10.18 | 23.39 | 11.58 | 24.31 | 93M | [librispeech960h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech960h.tar.gz) (1.1G)
+JoeyS2T | Transformer | 10.18 | 23.39 | 11.58 | 24.31 | 93M | [librispeech100h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech100h.tar.gz) (948M)
 
 #### LibriSpeech 960h
 
@@ -93,7 +93,7 @@ System | Architecture | dev-clean | dev-other | test-clean | test-other | #param
 [SpeechBrain](https://huggingface.co/speechbrain/asr-transformer-transformerlm-librispeech) | Conformer |  | 5.51 | 2.31 | 5.61 | 165M | -
 [facebook S2T](https://huggingface.co/facebook/s2t-small-librispeech-asr) | Transformer | 3.23 | 8.01 | 3.52 | 7.83 | 71M | -
 [facebook wav2vec2](https://huggingface.co/facebook/wav2vec2-base-960h) | Conformer | 3.17 | 8.87 | 3.39 | 8.57 | 94M | -
-JoeyS2T | Transformer | 3.50 | 8.44 | 3.78 | 8.32 | 102M | -
+JoeyS2T | Transformer | 3.50 | 8.44 | 3.78 | 8.32 | 102M | [librispeech100h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech100h.tar.gz) (1.1G)
 
 *We compute the WER on lowercased transcriptions without punctuations using sacrebleu's 13a tokenizer.
 
