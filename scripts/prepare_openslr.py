@@ -14,31 +14,17 @@ expected dir structure:
 """
 
 import argparse
-from itertools import groupby
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Tuple
 
-from datasets import load_dataset
 import numpy as np
 import pandas as pd
 import torch
-import torchaudio
-import yaml
-from audiodata_utils import (
-    Normalizer,
-    build_sp_model,
-    create_zip,
-    get_zip_manifest,
-    load_tsv,
-    save_tsv,
-)
-from torch import Tensor
-from torch.utils.data import Dataset
+from audiodata_utils import build_sp_model, create_zip, get_zip_manifest, save_tsv
+from datasets import load_dataset
 from tqdm import tqdm
 
 from joeynmt.helpers import write_list_to_file
-from joeynmt.helpers_for_audio import extract_fbank_features, get_n_frames
+from joeynmt.helpers_for_audio import extract_fbank_features
 
 COLUMNS = ["id", "src", "n_frames", "trg"]
 
@@ -60,20 +46,20 @@ def process(data_root, name):
     # Extract features
     print(f"Create OpenSLR {name} dataset.")
 
-    print(f"Fetching train split ...")
+    print("Fetching train split ...")
     dataset = load_dataset("openslr", name=name, split="train")
 
-    print(f"Extracting log mel filter bank features ...")
+    print("Extracting log mel filter bank features ...")
     for instance in tqdm(dataset):
         utt_id = Path(instance['path']).stem
         try:
-            extract_fbank_features(
-                waveform=torch.from_numpy(instance['audio']['array']).unsqueeze(0),
-                sample_rate=instance['audio']['sampling_rate'],
-                output_path=(feature_root / f'{utt_id}.npy'),
-                n_mel_bins=N_MEL_FILTERS,
-                overwrite=False)
-        except Exception as e:
+            extract_fbank_features(waveform=torch.from_numpy(
+                instance['audio']['array']).unsqueeze(0),
+                                   sample_rate=instance['audio']['sampling_rate'],
+                                   output_path=(feature_root / f'{utt_id}.npy'),
+                                   n_mel_bins=N_MEL_FILTERS,
+                                   overwrite=False)
+        except Exception as e:  # pylint: disable=broad-except
             print(f'Skip instance {utt_id}.', e)
             continue
 
@@ -98,20 +84,20 @@ def process(data_root, name):
                 "n_frames": n_frames,
                 "trg": instance['sentence'],
             })
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             print(f'Skip instance {utt_id}.', e)
             continue
 
     all_df = pd.DataFrame.from_records(all_data)
-    save_tsv(all_df, cur_root / f"all_data.tsv")
+    save_tsv(all_df, cur_root / "joey_all_data.tsv")
 
     # Split the data into train and test set and save the splits in tsv
     np.random.seed(SEED)
     probs = np.random.rand(len(all_df))
     mask = {}
     mask['train'] = probs < 0.995
-    mask['dev'] = (0.995 <= probs) & (probs < 0.998)
-    mask['test'] = 0.998 <= probs
+    mask['dev'] = (probs >= 0.995) & (probs < 0.998)
+    mask['test'] = probs >= 0.998
 
     for split in ['train', 'dev', 'test']:
         split_df = all_df[mask[split]]
@@ -123,10 +109,12 @@ def process(data_root, name):
 
     # Generate joint vocab
     print("Building joint vocab...")
-    kwargs = {'model_type': SP_MODEL_TYPE,
-              'vocab_size': VOCAB_SIZE,
-              'character_coverage': 1.0,
-              'num_workers': N_WORKERS}
+    kwargs = {
+        'model_type': SP_MODEL_TYPE,
+        'vocab_size': VOCAB_SIZE,
+        'character_coverage': 1.0,
+        'num_workers': N_WORKERS
+    }
     build_sp_model(cur_root / "train.txt", cur_root / f"spm_bpe{VOCAB_SIZE}", **kwargs)
     print("Done!")
 
@@ -134,7 +122,7 @@ def process(data_root, name):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_root", "-d", required=True, type=str)
-    parser.add_argument("--dataset_name", "-n", default="SLT70", required=True, type=str)
+    parser.add_argument("--dataset_name", default="SLT70", required=True, type=str)
     args = parser.parse_args()
 
     process(args.data_root, args.dataset_name)

@@ -7,9 +7,9 @@ Install discord.py: https://discordpy.readthedocs.io/en/stable/intro.html#instal
 A Minimal Bot: https://discordpy.readthedocs.io/en/stable/quickstart.html
 Getting started: https://discord.com/developers/docs/getting-started
 """
+import re
 from functools import partial
 from pathlib import Path
-import re
 
 import discord
 import torch
@@ -25,6 +25,7 @@ from joeynmt.model import build_model
 from joeynmt.prediction import predict
 from joeynmt.tokenizers import build_tokenizer
 from joeynmt.vocabulary import build_vocab
+
 # joeynmt v2.0.0
 
 client = discord.Client()

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+# coding: utf-8
 
-# Adapted from https://github.com/pytorch/fairseq/blob/master/examples/speech_to_text/data_utils.py
+# Adapted from
+# https://github.com/pytorch/fairseq/blob/master/examples/speech_to_text/data_utils.py
 
 import csv
 import io
@@ -8,13 +10,13 @@ import itertools
 import re
 import string
 import zipfile
-from collections import Counter
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 import sentencepiece as sp
+
 from tqdm import tqdm
 
 from joeynmt.constants import (
@@ -27,8 +29,7 @@ from joeynmt.constants import (
     UNK_ID,
     UNK_TOKEN,
 )
-from joeynmt.helpers import flatten
-from joeynmt.helpers_for_audio import _get_features_from_zip, _is_npy_data
+from joeynmt.helpers_for_audio import _is_npy_data
 
 
 def get_zip_manifest(zip_path: Path, npy_root: Optional[Path] = None):
@@ -58,8 +59,8 @@ def create_zip(data_root: Path, zip_path: Path):
         for path in tqdm(paths):
             try:
                 f.write(path, arcname=path.name)
-            except Exception as e:
-                raise Exception(f"{path} {e}")
+            except Exception as e:  # pylint: disable=broad-except
+                raise Exception(f"{path}") from e
 
 
 def save_tsv(df: pd.DataFrame, path: Path, header: bool = True) -> None:
@@ -104,7 +105,7 @@ def build_sp_model(input_path: Path, model_path_prefix: Path, **kwargs):
         f"--pad_id={PAD_ID}",
         "--vocabulary_output_piece_score=false",
     ]
-    if 'user_defined_symbols' in kwargs.keys():
+    if 'user_defined_symbols' in kwargs:
         arguments.append(f"--user_defined_symbols={kwargs['user_defined_symbols']}")
     sp.SentencePieceTrainer.Train(" ".join(arguments))
 
@@ -119,7 +120,8 @@ class Normalizer:
         },
         'de': {
             '€': 'Euro'
-        }
+        },
+        'ja': {}
     }
     ESCAPE = {
         'en': [
@@ -141,21 +143,41 @@ class Normalizer:
             ('(Applaus)', '<Applaus>'),
             ('(Applause)', '<Applaus>'),
             ('(Beifall)', '<Applaus>'),
-        ]
+        ],
+        'ja': [
+            ('（ため息）', '<ため息>'),
+            ('(笑)', '<笑>'),
+            ('（笑）', '<笑>'),
+            ('（笑い）', '<笑>'),
+            ('（笑い声）', '<笑>'),
+            ('（歌う）', '<音楽>'),
+            ('（音楽）', '<音楽>'),
+            ('（ヒーローの音楽）', '<音楽>'),
+            ('（大音量の音楽）', '<音楽>'),
+            ('(ビデオ)', '<音楽>'),
+            ('（ビデオ）', '<音楽>'),
+            ('（映像と音楽）', '<音楽>'),
+            ('(映像)', '<音楽>'),
+            ('（映像）', '<音楽>'),
+            ('(拍手)', '<拍手>'),
+            ('（拍手）', '<拍手>'),
+            ('（録音済みの拍手）', '<拍手>'),
+        ],
     }
 
     def __init__(self,
                  lang: str = "en",
                  lowercase: bool = True,
-                 remove_punc: bool = True,
+                 remove_punc: bool = False,
                  normalize_num: bool = True,
                  mapping_path: Path = None,
-                 escape: bool = False):
+                 escape: bool = True):
         try:
-            import sacremoses
+            # pylint: disable=import-outside-toplevel
             from sacremoses.normalize import MosesPunctNormalizer
-        except:
-            raise ImportError
+            from normalize_japanese import normalize as normalize_ja
+        except ImportError as e:
+            raise ImportError from e
 
         self.moses = MosesPunctNormalizer(lang)
         self.lowercase = lowercase
@@ -165,27 +187,27 @@ class Normalizer:
 
         if normalize_num:
             try:
-                import inflect
+                import inflect  # pylint: disable=import-outside-toplevel
                 self.inflect = inflect.engine()
-            except:
-                raise ImportError
+            except ImportError as e:
+                raise ImportError from e
 
         self.escape = self.ESCAPE[lang] if escape else None
         self.mapping = self.MAPPING[lang]
         if mapping_path:
             self.mapping_num = {}
-            with Path(mapping_path).open('r') as f:
+            with Path(mapping_path).open('r', encoding="utf8") as f:
                 for line in f.readlines():
-                    l = line.strip().split('\t')
+                    l = line.strip().split('\t')  # noqa: E741
                     self.mapping_num[l[0]] = l[1]
         # mapping.txt (one word per line)
-        ########## format:
+        # ---------- format:
         # orig_surface [TAB] replacement
-        ########## examples:
+        # ---------- examples:
         # g7	g seven
         # 11pm	eleven pm
         # 6am	six am
-        ##########
+        # ----------
 
     def _years(self, word):
         num_word = word
@@ -207,7 +229,7 @@ class Normalizer:
             try:
                 w = int(num_word)
                 num_word = self.inflect.number_to_words(w)
-            except:
+            except:  # pylint: disable=bare-except # noqa: E722
                 s_flag = False
 
         elif len(num_word) == 4:
@@ -223,7 +245,7 @@ class Normalizer:
                     num_word = self.inflect.number_to_words(num_word, andword="")
                 else:
                     num_word = self.inflect.number_to_words(num_word, group=2)
-            except:
+            except:  # pylint: disable=bare-except # noqa: E722
                 s_flag = False
 
         if s_flag:
@@ -235,6 +257,7 @@ class Normalizer:
         return num_word.lower() if self.lowercase else num_word
 
     def __call__(self, orig_utt):
+        # pylint: disable=too-many-branches
         utt = orig_utt.lower() if self.lowercase else orig_utt
         utt = self.moses.normalize(utt)
 
@@ -260,7 +283,7 @@ class Normalizer:
                     if len(before) > 0:
                         utterance.append(before)
 
-                    if word in self.mapping_num.keys():
+                    if word in self.mapping_num:
                         num_word = self.mapping_num[word]
                     else:
                         num_word = self._years(word)
@@ -286,6 +309,9 @@ class Normalizer:
 
         utt = re.sub(r'(\([^)]+\)|\[[^\]]+\])', ' ', utt)
 
+        if self.lang == 'ja':
+            return normalize_ja(utt)
+
         valid_char = ' a-z'
         if self.lang == 'de':
             valid_char += 'äöüß'
@@ -304,7 +330,7 @@ class Normalizer:
             # ascii punctuations only
             valid_char += string.punctuation
             # unicode punctuations
-            #valid_char += ''.join[chr(i) for i in range(sys.maxunicode)
+            # valid_char += ''.join[chr(i) for i in range(sys.maxunicode)
             #    if unicodedata.category(chr(i)).startswith('P')]
 
         if self.escape is not None:

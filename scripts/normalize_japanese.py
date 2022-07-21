@@ -29,26 +29,26 @@ def _unicode_normalize(cls, s):
 def _remove_extra_spaces(s):
     s = re.sub("\u200b", "", s)
     s = re.sub("[ 　]+", " ", s)
-    blocks = "".join((
-        "\u4E00-\u9FFF",  # CJK UNIFIED IDEOGRAPHS
-        "\u3040-\u309F",  # HIRAGANA
-        "\u30A0-\u30FF",  # KATAKANA
-        "\u3000-\u303F",  # CJK SYMBOLS AND PUNCTUATION
-        "\uFF00-\uFFEF",  # HALFWIDTH AND FULLWIDTH FORMS
-    ))
+    # blocks = "".join((
+    #    "\u4E00-\u9FFF",  # CJK UNIFIED IDEOGRAPHS
+    #    "\u3040-\u309F",  # HIRAGANA
+    #    "\u30A0-\u30FF",  # KATAKANA
+    #    "\u3000-\u303F",  # CJK SYMBOLS AND PUNCTUATION
+    #    "\uFF00-\uFFEF",  # HALFWIDTH AND FULLWIDTH FORMS
+    # ))
 
     # latin = ''.join(('\u0000-\u007F',   # Basic Latin[g]
     #                 '\u0080-\u00FF',   # Latin-1 Supplement[h]
     # ))
 
-    def _remove_space_between(cls1, cls2, s):
-        # pylint: disable=consider-using-f-string
-        p = re.compile("([{}]) ([{}])".format(cls1, cls2))
-        while p.search(s):
-            s = p.sub(r"\1\2", s)
-        return s
+    # def _remove_space_between(cls1, cls2, s):
+    #    # pylint: disable=consider-using-f-string
+    #    p = re.compile("([{}]) ([{}])".format(cls1, cls2))
+    #    while p.search(s):
+    #        s = p.sub(r"\1\2", s)
+    #    return s
 
-    s = _remove_space_between(blocks, blocks, s)
+    # s = _remove_space_between(blocks, blocks, s)
     # s = _remove_space_between(blocks, latin, s)
     # s = _remove_space_between(latin, blocks, s)
     return s
