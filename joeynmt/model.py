@@ -122,6 +122,7 @@ class Model(nn.Module):
             if self.loss_function.require_ctc_layer and isinstance(ctc_out, Tensor):
                 kwargs["src_mask"] = src_mask  # pass through subsampled mask
                 kwargs["ctc_log_probs"] = F.log_softmax(ctc_out, dim=-1)
+            # pylint: disable=not-callable
             batch_loss = self.loss_function(log_probs, **kwargs)
             assert isinstance(batch_loss, tuple) and 1 <= len(batch_loss) <= 3
 

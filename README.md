@@ -55,7 +55,7 @@ Please check the JoeyNMT's [documentation](https://joeynmt.readthedocs.io) first
 
 For details, follow the tutorials in [notebooks](notebooks) dir.
 - [quick-start-with-joeynmt2](notebooks/quick-start-with-joeynmt2.ipynb)
-- [speech-to-text-with-joeynmt2](notebooks/joeyS2T_ASR_tutorial.ipynbb) 
+- [speech-to-text-with-joeynmt2](notebooks/joeyS2T_ASR_tutorial.ipynb) 
 
 
 

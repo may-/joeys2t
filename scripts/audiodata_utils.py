@@ -173,9 +173,9 @@ class Normalizer:
                  mapping_path: Path = None,
                  escape: bool = True):
         try:
-            # pylint: disable=import-outside-toplevel
+            # pylint: disable=import-outside-toplevel,unused-import
             from sacremoses.normalize import MosesPunctNormalizer
-            from normalize_japanese import normalize as normalize_ja
+            from normalize_japanese import normalize as normalize_ja  # noqa: F401
         except ImportError as e:
             raise ImportError from e
 
@@ -310,7 +310,7 @@ class Normalizer:
         utt = re.sub(r'(\([^)]+\)|\[[^\]]+\])', ' ', utt)
 
         if self.lang == 'ja':
-            return normalize_ja(utt)
+            return normalize_ja(utt)  # pylint: disable=undefined-variable # noqa: F821
 
         valid_char = ' a-z'
         if self.lang == 'de':
