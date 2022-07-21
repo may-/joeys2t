@@ -49,17 +49,17 @@ training:
     validation_freq: 1000
     logging_freq: 100
     model_dir: "reverse_transformer"
-    overwrite: True
+    overwrite: False
     shuffle: True
     use_cuda: False
     print_valid_sents: [0, 3, 6]
     keep_best_ckpts: 2
 
 model:
-    initializer: "xavier"           # initializer for all trainable weights (xavier, zeros, normal, uniform)
+    initializer: "xavier_uniform"   # initializer for all trainable weights (xavier_uniform, xavier_normal, zeros, normal, uniform)
     init_gain: 1.0                  # gain for Xavier initializer (default: 1.0)
-    bias_initializer: "zeros"       # initializer for bias terms (xavier, zeros, normal, uniform)
-    embed_initializer: "xavier"     # initializer for embeddings (xavier, zeros, normal, uniform)
+    bias_initializer: "zeros"       # initializer for bias terms (xavier_uniform, xavier_normal, zeros, normal, uniform)
+    embed_initializer: "xavier_uniform"     # initializer for embeddings (xavier_uniform, xavier_normal, zeros, normal, uniform)
     embed_init_gain: 1.0            # gain for Xavier initializer for embeddings (default: 1.0)
     tied_embeddings: True          # tie src and trg embeddings, only applicable if vocabularies are the same, default: False
     tied_softmax: True

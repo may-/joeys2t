@@ -86,10 +86,10 @@ training:
     keep_best_ckpts: 5
 
 model:
-    initializer: "xavier_normal"
+    initializer: "xavier_uniform"
     bias_initializer: "zeros"
     init_gain: 1.0
-    embed_initializer: "xavier_normal"
+    embed_initializer: "xavier_uniform"
     embed_init_gain: 1.0
     tied_embeddings: True
     tied_softmax: True
@@ -105,7 +105,7 @@ model:
         hidden_size: 512
         ff_size: 2048
         dropout: 0.1
-        layer_norm: "post"
+        layer_norm: "pre"
     decoder:
         type: "transformer"
         num_layers: 6
@@ -118,4 +118,4 @@ model:
         hidden_size: 512
         ff_size: 2048
         dropout: 0.1
-        layer_norm: "post"
+        layer_norm: "pre"

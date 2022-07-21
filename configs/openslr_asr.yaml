@@ -3,9 +3,9 @@ joeynmt_version: 2.0.0
 
 data: # specify your data here
     task: "S2T"                   # task, either "MT" for machine translation, or "S2T" for speech-to-text
-    train: "MUSTC_v2.0/en-de/joey_train_asr"
-    dev: "MUSTC_v2.0/en-de/joey_dev_asr"
-    test: "MUSTC_v2.0/en-de/joey_tst-COMMON_asr"
+    train: "data/SLR32/joey_train_asr"
+    dev: "data/SLR32/joey_dev_asr"
+    test: "data/SLR32/joey_tst-COMMON_asr"
     dataset_type: "speech"
     sample_dev_subset: 200
     src:
@@ -17,10 +17,10 @@ data: # specify your data here
         tokenizer_type: "speech"    # invoke speech processor
         tokenizer_cfg:
             specaugment:
-                freq_mask_n: 2
-                freq_mask_f: 27
-                time_mask_n: 2
-                time_mask_t: 100
+                freq_mask_n: 1
+                freq_mask_f: 12
+                time_mask_n: 1
+                time_mask_t: 50
                 time_mask_p: 1.0
             cmvn:
                 norm_means: True
@@ -33,24 +33,24 @@ data: # specify your data here
         max_length: 80            # filter out longer sentences from training (trg)
         voc_min_freq: 1           # trg minimum frequency for a token to become part of the vocabulary
         voc_limit: 5000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
-        voc_file: "MUSTC_v2.0/en-de/spm_bpe5000.vocab.txt"  # one token per line, line number is index
+        voc_file: "data/SLR32/spm_bpe5000.vocab.txt"  # one token per line, line number is index
         tokenizer_type: "sentencepiece"
         tokenizer_cfg:
-            model_file: "MUSTC_v2.0/en-de/spm_bpe5000.model"  # sentence piece model path
+            model_file: "data/SLR32/spm_bpe5000.model"  # sentence piece model path
             pretokenize: "none"
 
 testing:                            # specify which inference algorithm to use for testing (for validation it's always greedy decoding)
     beam_size: 5                    # size of the beam for beam search
     beam_alpha: 1.0                 # length penalty for beam search
-    batch_size: 80000               # mini-batch size for evaluation (see batch_size above)
+    batch_size: 10000               # mini-batch size for evaluation (see batch_size above)
     batch_type: "token"             # evaluation batch type ("sentence", default) or tokens ("token")
     max_output_length: 100          # maximum output length for decoding, default: None. If set to None, allow sentences of max 1.5*src length
     eval_metrics: ["bleu"]          # validation metric, default: "bleu", other options: "chrf", "token_accuracy", "sequence_accuracy", "wer"
     sacrebleu_cfg:
-        tokenize: "intl"
+        tokenize: "13a"
 
 training:
-    #load_model: "models/mustc_v2_st/latest.ckpt"
+    #load_model: "models/openslr_asr/latest.ckpt"
     reset_best_ckpt: False
     reset_scheduler: False
     reset_optimizer: False
@@ -65,29 +65,29 @@ training:
     clip_grad_norm: 10.0
     weight_decay: 0.0
     label_smoothing: 0.1
-    batch_multiplier: 8
+    batch_multiplier: 4
     normalization: "batch"
-    batch_size: 40000
+    batch_size: 10000
     batch_type: "token"
     early_stopping_metric: "bleu"
     epochs: 100
     updates: 100000
     validation_freq: 1000
     logging_freq: 100
-    model_dir: "models/mustc_v2_st"
+    model_dir: "models/openslr_asrt"
     overwrite: False
     shuffle: True
     use_cuda: True
-    fp16: False
+    fp16: True
     print_valid_sents: [0, 1, 2]
     keep_best_ckpts: 5
     loss: "crossentropy-ctc"
     ctc_weight: 0.3
 
 model:
-    initializer: "xavier_normal"
+    initializer: "xavier_uniform"
     init_gain: 1.0
-    embed_initializer: "xavier_normal"
+    embed_initializer: "xavier_uniform"
     embed_init_gain: 1.0
     bias_initializer: "zeros"
     tied_embeddings: False
@@ -95,7 +95,7 @@ model:
     encoder:
         type: "transformer"
         num_layers: 6
-        num_heads: 8
+        num_heads: 4
         embeddings:
             embedding_dim: 80
             #embedding_dim: 512
@@ -111,11 +111,11 @@ model:
         conv_kernel_sizes: [5, 5]
         conv_channels: 512
         in_channels: 80
-        layer_norm: "post"
+        layer_norm: "pre"
     decoder:
         type: "transformer"
         num_layers: 6
-        num_heads: 8
+        num_heads: 4
         embeddings:
             embedding_dim: 512
             scale: True
@@ -126,4 +126,4 @@ model:
         ff_size: 2048
         dropout: 0.15
         freeze: False
-        layer_norm: "post"
+        layer_norm: "pre"

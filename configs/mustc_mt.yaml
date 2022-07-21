@@ -2,10 +2,10 @@ name: "mustc-v2-ende-mt"
 joeynmt_version: 2.0.0
 
 data: # specify your data here
-    task: "MT"                   # task, either "MT" for machine translation, or "S2T" for speech-to-text
-    train: "MUSTC_v2.0/en-de/train"      # training data
-    dev: "MUSTC_v2.0/en-de/dev"        # development data for validation
-    test: "MUSTC_v2.0/en-de/tst-COMMON"            # test data for testing final model; optional
+    task: "MT"                    # task, either "MT" for machine translation, or "S2T" for speech-to-text
+    train: "data/MUSTC_v2.0/en-de/train"      # training data
+    dev: "data/MUSTC_v2.0/en-de/dev"          # development data for validation
+    test: "data/MUSTC_v2.0/en-de/tst-COMMON"  # test data for testing final model; optional
     dataset_type: "plain"
     sample_dev_subset: 200
     src:
@@ -14,46 +14,50 @@ data: # specify your data here
         lowercase: True           # lowercase the data, also for validation
         max_length: 100           # filter out longer sentences from training (trg)
         voc_min_freq: 1           # trg minimum frequency for a token to become part of the vocabulary
-        voc_limit: 5000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
-        voc_file: "MUSTC_v2.0/en-de/spm_bpe5000.vocab.txt"  # one token per line, line number is index
+        voc_limit: 7000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
+        voc_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.vocab"  # one token per line, line number is index
         tokenizer_type: "sentencepiece"
         tokenizer_cfg:
-            model_file: "MUSTC_v2.0/en-de/spm_bpe5000.model"  # sentence piece model path
-            pretokenize: "none"
+            model_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.model"  # sentence piece model path
+            alpha: 0.1
+            nbest_size: 10
+            pretokenizer: "none"
     trg:
         lang: "de"
-        level: "bpe"              # segmentation level: either "word", "bpe" or "char"
-        lowercase: False           # lowercase the data, also for validation
-        max_length: 120           # filter out longer sentences from training (trg)
-        voc_min_freq: 1           # trg minimum frequency for a token to become part of the vocabulary
-        voc_limit: 5000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
-        voc_file: "MUSTC_v2.0/en-de/spm_bpe5000.vocab.txt"  # one token per line, line number is index
+        level: "bpe"
+        lowercase: False
+        max_length: 120
+        voc_min_freq: 1
+        voc_limit: 7000
+        voc_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.vocab"  # one token per line, line number is index
         tokenizer_type: "sentencepiece"
         tokenizer_cfg:
-            model_file: "MUSTC_v2.0/en-de/spm_bpe5000.model"  # sentence piece model path
-            pretokenize: "none"
+            model_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.model"  # sentence piece model path
+            alpha: 0.1
+            nbest_size: 10
+            pretokenizer: "none"
 
-testing:                            # specify which inference algorithm to use for testing (for validation it's always greedy decoding)
-    beam_size: 5                    # size of the beam for beam search
-    beam_alpha: 1.0                 # length penalty for beam search
-    batch_size: 4000               # mini-batch size for evaluation (see batch_size above)
-    batch_type: "token"             # evaluation batch type ("sentence", default) or tokens ("token")
-    max_output_length: 120          # maximum output length for decoding, default: None. If set to None, allow sentences of max 1.5*src length
-    eval_metrics: ["bleu", "wer"]           # validation metric, default: "bleu", other options: "chrf", "token_accuracy", "sequence_accuracy", "wer"
+testing:
+    beam_size: 5
+    beam_alpha: 1.0
+    batch_size: 4000
+    batch_type: "token"
+    max_output_length: 120
+    eval_metrics: ["bleu"]
     sacrebleu_cfg:
-        tokenize: "intl"
+        tokenize: "13a"
 
 training:
-    #load_model: "models/mustc_v2_mt/latest.ckpt"
+    #load_model: "models/mustc_v2_mt/best.ckpt"
     reset_best_ckpt: False
     reset_scheduler: False
     reset_optimizer: False
     reset_iter_state: False
-    random_seed: 123
+    random_seed: 42
     optimizer: "adam"
     adam_betas: [0.9, 0.99]
     scheduling: "warmupinversesquareroot"
-    learning_rate: 2.0e-3
+    learning_rate: 1.0e-4
     learning_rate_min: 1.0e-6
     learning_rate_warmup: 4000
     clip_grad_norm: 1.0
@@ -74,44 +78,44 @@ training:
     use_cuda: True
     fp16: False
     print_valid_sents: [0, 1, 2]
-    keep_best_ckpts: 5
+    keep_best_ckpts: 10
     loss: "crossentropy"
 
 model:
-    initializer: "xavier_normal"
+    initializer: "xavier_uniform"
     init_gain: 1.0
-    embed_initializer: "xavier_normal"
+    embed_initializer: "xavier_uniform"
     embed_init_gain: 1.0
     bias_initializer: "zeros"
     tied_embeddings: True
     tied_softmax: True
     encoder:
         type: "transformer"
-        num_layers: 12
-        num_heads: 8
+        num_layers: 8
+        num_heads: 4
         embeddings:
             embedding_dim: 512
             scale: True
-            dropout: 0.
+            dropout: 0.1
             freeze: False
         # typically ff_size = 8 x hidden_size
         hidden_size: 512
         ff_size: 2048
-        dropout: 0.15
+        dropout: 0.1
         freeze: False
-        layer_norm: "post"
+        layer_norm: "pre"
     decoder:
         type: "transformer"
-        num_layers: 6
-        num_heads: 8
+        num_layers: 8
+        num_heads: 4
         embeddings:
             embedding_dim: 512
             scale: True
-            dropout: 0.
+            dropout: 0.1
             freeze: False
         # ff_size = 8 x hidden_size
         hidden_size: 512
         ff_size: 2048
-        dropout: 0.15
+        dropout: 0.1
         freeze: False
-        layer_norm: "post"
+        layer_norm: "pre"
