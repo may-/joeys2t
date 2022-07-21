@@ -4,7 +4,7 @@ Data module
 """
 import logging
 from functools import partial
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple
 
 import torch
 from torch.utils.data import (

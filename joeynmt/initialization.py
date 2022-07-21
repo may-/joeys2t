@@ -2,7 +2,7 @@
 """
 Implements custom initialization
 """
-
+import logging
 import math
 
 import torch
@@ -11,6 +11,8 @@ from torch.nn.init import _calculate_fan_in_and_fan_out
 
 from joeynmt.embeddings import Embeddings
 from joeynmt.helpers import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 
 def orthogonal_rnn_init_(cell: nn.RNNBase, gain: float = 1.0) -> None:
@@ -83,7 +85,7 @@ def initialize_model(model: nn.Module, cfg: dict, src_padding_idx: int,
     configs/iwslt14_ende_spm.yaml`.
 
     The main initializer is set using the `initializer` key. Possible values are
-    `xavier`, `uniform`, `normal` or `zeros`. (`xavier` is the default).
+    `xavier_uniform`, `uniform`, `normal` or `zeros`. (`xavier_uniform` is the default).
 
     When an initializer is set to `uniform`, then `init_weight` sets the range for
     the values (-init_weight, init_weight).
@@ -107,13 +109,21 @@ def initialize_model(model: nn.Module, cfg: dict, src_padding_idx: int,
     :param src_padding_idx: index of source padding token
     :param trg_padding_idx: index of target padding token
     """
-    # pylint: disable=too-many-branches
+    # pylint: disable=too-many-branches,too-many-statements
     # defaults: xavier gain 1.0, embeddings: normal 0.01, biases: zeros, no orthogonal
     gain = float(cfg.get("init_gain", 1.0))  # for xavier
-    init = cfg.get("initializer", "xavier")
+    init = cfg.get("initializer", "xavier_uniform")
+    if init == "xavier":
+        init = "xavier_uniform"
+        logger.warning(
+            "`xavier` option is obsolete. Please use `xavier_uniform`, instead.")
     init_weight = float(cfg.get("init_weight", 0.01))
 
-    embed_init = cfg.get("embed_initializer", "normal")
+    embed_init = cfg.get("embed_initializer", "xavier_uniform")
+    if embed_init == "xavier":
+        embed_init = "xavier_uniform"
+        logger.warning(
+            "`xavier` option is obsolete. Please use `xavier_uniform`, instead.")
     embed_init_weight = float(cfg.get("embed_init_weight", 0.01))
     embed_gain = float(cfg.get("embed_init_gain", 1.0))  # for xavier
 
@@ -138,7 +148,7 @@ def initialize_model(model: nn.Module, cfg: dict, src_padding_idx: int,
         # pylint: disable=no-else-return,unnecessary-lambda
         scale = float(scale)
         assert scale > 0.0, "incorrect init_weight"
-        if s.lower() == "xavier":
+        if s.lower() == "xavier_uniform":
             return lambda p: nn.init.xavier_uniform_(p, gain=_gain)
         elif s.lower() == "xavier_normal":
             return lambda p: nn.init.xavier_normal_(p, gain=_gain)
@@ -168,7 +178,7 @@ def initialize_model(model: nn.Module, cfg: dict, src_padding_idx: int,
 
                 # RNNs combine multiple matrices is one, which messes up
                 # xavier initialization
-                if init == "xavier" and "rnn" in name:
+                if init == "xavier_uniform" and "rnn" in name:
                     n = 1
                     if "encoder" in name:
                         n = 4 if isinstance(model.encoder.rnn, nn.LSTM) else 3

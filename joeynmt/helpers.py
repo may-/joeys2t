@@ -564,12 +564,10 @@ def tile(x: Tensor, count: int, dim=0) -> Tensor:
     out_size = list(x.size())
     out_size[0] *= count
     batch = x.size(0)
-    x = (x.view(batch,-1)
-         .transpose(0, 1)
-         .repeat(count, 1)
-         .transpose(0, 1)
-         .contiguous()
-         .view(*out_size))
+    x = (x.view(batch,
+                -1).transpose(0, 1).repeat(count,
+                                           1).transpose(0,
+                                                        1).contiguous().view(*out_size))
     if dim != 0:
         x = x.permute(perm).contiguous()
     return x
@@ -694,7 +692,7 @@ def unicode_normalize(s: str) -> str:
 
     :param s: input string
     :return: normalized string
-    """
+    """  # noqa: E501
     s = unicodedata.normalize("NFKC", s)
     s = s.replace("’", "'")
     s = s.replace("“", '"')
@@ -711,12 +709,9 @@ def remove_punctuation(s: str, space: chr):
     :param s: input string
     :param space: charactor for white space (delimiter special char)
     :return: string without punctuation
-    """
-    return space.join(
-        t
-        for t in s.split(space)
-        if not all(unicodedata.category(c)[0] == "P" for c in t)
-    )
+    """  # noqa: E501
+    return space.join(t for t in s.split(space)
+                      if not all(unicodedata.category(c)[0] == "P" for c in t))
 
 
 def lengths_to_padding_mask(lengths: Tensor) -> Tensor:
@@ -746,12 +741,12 @@ def pad(x: Tensor, max_len: int, pad_index: int = PAD_ID, dim: int = 1) -> Tenso
         pad_index = PAD_ID
 
     if dim == 1:
-        batch_size, seq_len, _ = x.size()
+        _, seq_len, _ = x.size()
         offset = max_len - seq_len
         new_x = _pad(x, (0, 0, 0, offset, 0, 0), "constant", pad_index) \
             if x.size(dim) < max_len else x
     elif dim == -1:
-        batch_size, _, seq_len = x.size()
+        _, _, seq_len = x.size()
         offset = max_len - seq_len
         new_x = _pad(x, (0, offset), "constant", pad_index) \
             if x.size(dim) < max_len else x

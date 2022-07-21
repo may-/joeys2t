@@ -599,11 +599,7 @@ class TrainManager:
 
                 logger.info(
                     "Epoch %3d: total training loss %.2f, num seqs %d, num tokens %d",
-                    epoch_no + 1,
-                    epoch_loss,
-                    total_nseqs,
-                    total_ntokens
-                )
+                    epoch_no + 1, epoch_loss, total_nseqs, total_ntokens)
             else:
                 logger.info("Training ended after %3d epochs.", epoch_no + 1)
             logger.info(

@@ -29,6 +29,7 @@ from joeynmt.helpers import (
     store_attention_plots,
     write_list_to_file,
 )
+from joeynmt.helpers_for_audio import pad_features
 from joeynmt.metrics import bleu, chrf, sequence_accuracy, token_accuracy, wer
 from joeynmt.model import Model, _DataParallel, build_model
 from joeynmt.search import search
@@ -190,7 +191,8 @@ def predict(
             else [])
     gen_duration = time.time() - gen_start_time
 
-    assert len(valid_iter.dataset) == total_nseqs == len(data), (len(valid_iter.dataset), total_nseqs, len(data))
+    assert len(valid_iter.dataset) == total_nseqs == len(data), \
+        (len(valid_iter.dataset), total_nseqs, len(data))
     assert len(all_outputs) == len(data) * n_best, (len(all_outputs), len(data), n_best)
 
     if compute_loss:

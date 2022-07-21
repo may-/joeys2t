@@ -86,7 +86,7 @@ class Batch:
             self.src_max_len: int = self.src.size(1)
             # if multi-gpu, re-pad src so that all seqs in parallel gpus
             # have the same length!
-            self.repad: bool = True if torch.cuda.device_count() > 1 else False
+            self.repad: bool = torch.cuda.device_count() > 1
 
         # a batch has to contain more than one src sentence
         assert self.nseqs > 0, self.nseqs

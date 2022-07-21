@@ -2,11 +2,10 @@
 """
 Collection of helper functions for audio processing
 """
-import logging
 import io
-import sys
+import logging
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -15,7 +14,6 @@ import torchaudio.compliance.kaldi as ta_kaldi
 import torchaudio.sox_effects as ta_sox
 
 from joeynmt.constants import PAD_ID
-
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +56,7 @@ def extract_fbank_features(waveform: torch.FloatTensor,
         features = _get_torchaudio_fbank(_waveform, sample_rate, n_mel_bins)
     except Exception as e:
         raise ValueError(f"torchaudio faild to extract mel filterbank features "
-                         f"at: {output_path.stem}. {e}")
+                         f"at: {output_path.stem}. {e}") from e
 
     if output_path is not None:
         np.save(output_path.as_posix(), features)
@@ -81,7 +79,8 @@ def _get_features_from_zip(path, byte_offset, byte_size):
     if len(data) > 1 and _is_npy_data(data):
         features = np.load(byte_features)
     else:
-        raise ValueError(f'Unknown file format for "{path}"')
+        raise ValueError(f'Unknown file format for '
+                         f'"{path}" [{byte_offset}:{byte_size}]')
     return features
 
 

@@ -113,7 +113,7 @@ def wer(hypotheses, references, tokenizer):
     numerator = 0.0
     denominator = 0.0
     # sentence-level wer
-    #for hyp, ref in zip(hypotheses, references):
+    # for hyp, ref in zip(hypotheses, references):
     #    wer = editdistance.eval(tokenizer(hyp),
     #                            tokenizer(ref)) / len(tokenizer(ref))
     #    numerator += max(wer, 1.0) # can be `wer > 1` if `len(hyp) > len(ref)`

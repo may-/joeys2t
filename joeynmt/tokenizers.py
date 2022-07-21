@@ -5,7 +5,7 @@ Tokenizer module
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 import numpy as np
 import sentencepiece as sp
@@ -18,7 +18,7 @@ from joeynmt.helpers import (
     ConfigurationError,
     remove_extra_spaces,
     remove_punctuation,
-    unicode_normalize
+    unicode_normalize,
 )
 from joeynmt.helpers_for_audio import get_features
 
@@ -58,6 +58,7 @@ class BasicTokenizer:
                 from sacremoses import (  # pylint: disable=import-outside-toplevel
                     MosesDetokenizer, MosesPunctNormalizer, MosesTokenizer,
                 )
+
                 # sacremoses package has to be installed.
                 # https://github.com/alvations/sacremoses
             except ImportError as e:
@@ -327,9 +328,9 @@ class SpeechProcessor:
         self.max_length = max_length
         self.min_length = min_length
 
-        self.specaugment = SpecAugment(**kwargs["specaugment"]) \
+        self.specaugment: Callable = SpecAugment(**kwargs["specaugment"]) \
             if "specaugment" in kwargs else None
-        self.cmvn = CMVN(**kwargs["cmvn"]) if "cmvn" in kwargs else None
+        self.cmvn: Callable = CMVN(**kwargs["cmvn"]) if "cmvn" in kwargs else None
         self.root_path = ""  # assigned later by dataset.__init__()
 
     def __call__(self, line: str, is_train: bool = False) -> np.ndarray:
@@ -353,14 +354,15 @@ class SpeechProcessor:
             return None
         if self._filter_too_long_item(num_frames):
             # Don't use too long sequence in training.
-            if is_train:
+            if is_train:  # pylint: disable=no-else-return
                 return None
-            else:
+            else:  # in test, truncate the sequence
                 item = item[:self.max_length, :]
                 num_frames = item.shape[0]
                 assert num_frames <= self.max_length
 
         # cmvn / specaugment
+        # pylint: disable=not-callable
         if self.cmvn and self.cmvn.before:
             item = self.cmvn(item)
         if is_train and self.specaugment:
@@ -407,6 +409,9 @@ class EvaluationTokenizer(BasicTokenizer):
 
     def __call__(self, raw_input: str, is_train: bool = False) -> List[str]:
         tokenized = self.tokenizer(raw_input)
+
+        if self.lowercase:
+            tokenized = tokenized.lower()
 
         # Remove punctuation (apply this after tokenization!)
         if self.no_punc:

@@ -4,7 +4,7 @@ Module to represents whole models
 """
 import logging
 from pathlib import Path
-from typing import Tuple
+from typing import Callable, Tuple
 
 import numpy as np
 import torch
@@ -13,7 +13,12 @@ from torch import Tensor, nn
 
 from joeynmt.decoders import Decoder, RecurrentDecoder, TransformerDecoder
 from joeynmt.embeddings import Embeddings
-from joeynmt.encoders import ConformerEncoder, Encoder, RecurrentEncoder, TransformerEncoder
+from joeynmt.encoders import (
+    ConformerEncoder,
+    Encoder,
+    RecurrentEncoder,
+    TransformerEncoder,
+)
 from joeynmt.helpers import ConfigurationError
 from joeynmt.initialization import initialize_model
 from joeynmt.loss import XentCTCLoss, XentLoss
@@ -61,7 +66,7 @@ class Model(nn.Module):
         self.bos_index = self.trg_vocab.bos_index
         self.eos_index = self.trg_vocab.eos_index
         self.unk_index = self.trg_vocab.unk_index
-        self._loss_function = None  # set by the TrainManager
+        self._loss_function: Callable = None  # set by the TrainManager
         self.task = task
 
         if self.task == "S2T":
@@ -76,10 +81,11 @@ class Model(nn.Module):
     def loss_function(self, cfg: Tuple):
         loss_type, label_smoothing, ctc_weight = cfg
         if loss_type == "crossentropy-ctc":
-            loss_function = XentCTCLoss(pad_index=self.pad_index,
-                                        bos_index=self.bos_index,  # bos -> blank
-                                        smoothing=label_smoothing,
-                                        ctc_weight=ctc_weight)
+            loss_function = XentCTCLoss(
+                pad_index=self.pad_index,
+                bos_index=self.bos_index,  # bos -> blank
+                smoothing=label_smoothing,
+                ctc_weight=ctc_weight)
         elif loss_type == "crossentropy":
             loss_function = XentLoss(pad_index=self.pad_index,
                                      smoothing=label_smoothing)
@@ -299,6 +305,7 @@ def build_model(cfg: dict = None,
     :param trg_vocab: target vocabulary
     :return: built and initialized model
     """
+    # pylint: disable=too-many-branches
     logger.info("Building an encoder-decoder model...")
     enc_cfg = cfg["encoder"]
     dec_cfg = cfg["decoder"]
@@ -332,8 +339,8 @@ def build_model(cfg: dict = None,
     enc_emb_dropout = enc_cfg["embeddings"].get("dropout", enc_dropout)
     enc_type = enc_cfg.get("type", "transformer")
     if enc_type not in ["recurrent", "transformer", "conformer"]:
-        raise ConfigurationError(
-            "Invalid encoder type. Valid options: {`recurrent`, `transformer`, `conformer`}.")
+        raise ConfigurationError("Invalid encoder type. Valid options: "
+                                 "{`recurrent`, `transformer`, `conformer`}.")
     if enc_type == "transformer":
         if task == "MT":
             assert enc_cfg["embeddings"]["embedding_dim"] == enc_cfg["hidden_size"], (
@@ -341,7 +348,7 @@ def build_model(cfg: dict = None,
             emb_size = src_embed.embedding_dim
         elif task == "S2T":
             emb_size = enc_cfg["embeddings"]["embedding_dim"]
-            #TODO: check if emb_size == num_freq
+            # TODO: check if emb_size == num_freq
         encoder = TransformerEncoder(**enc_cfg,
                                      emb_size=emb_size,
                                      emb_dropout=enc_emb_dropout,
@@ -349,7 +356,7 @@ def build_model(cfg: dict = None,
     elif enc_type == "conformer":
         assert task == "S2T", "Conformer model can be used only for S2T task."
         emb_size = enc_cfg["embeddings"]["embedding_dim"]
-        #TODO: check if emb_size == num_freq
+        # TODO: check if emb_size == num_freq
         encoder = ConformerEncoder(**enc_cfg,
                                    emb_size=emb_size,
                                    emb_dropout=enc_emb_dropout,
@@ -369,6 +376,7 @@ def build_model(cfg: dict = None,
             "Invalid decoder type. Valid options: {`transformer`, `recurrent`}.")
     if dec_type == "transformer":
         if task == "S2T":
+            # pylint: disable=protected-access
             dec_cfg["encoder_output_size_for_ctc"] = encoder._output_size
         decoder = TransformerDecoder(**dec_cfg,
                                      encoder=encoder,

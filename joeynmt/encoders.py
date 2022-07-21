@@ -11,8 +11,11 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from joeynmt.constants import PAD_ID
 from joeynmt.helpers import freeze_params, lengths_to_padding_mask, pad
-from joeynmt.transformer_layers import ConformerEncoderLayer, PositionalEncoding, TransformerEncoderLayer
-
+from joeynmt.transformer_layers import (
+    ConformerEncoderLayer,
+    PositionalEncoding,
+    TransformerEncoderLayer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -278,8 +281,9 @@ class TransformerEncoder(Encoder):
 
     def _repad(self, x, mask, src_max_len):
         # re-pad `x` and `mask` so that all seqs in parallel gpus have the same len!
-        src_max_len = int(self.subsampler.get_out_seq_lens_tensor(
-            torch.tensor(src_max_len).float()).item())
+        src_max_len = int(
+            self.subsampler.get_out_seq_lens_tensor(
+                torch.tensor(src_max_len).float()).item())
         x = pad(x, src_max_len, pad_index=self.pad_index, dim=1)
         mask = pad(mask, src_max_len, pad_index=self.pad_index, dim=-1)
         return x, mask
@@ -306,7 +310,7 @@ class Conv1dSubsampler(nn.Module):
     :return:
         - output tensor
         - sequence length after subsampling
-    """
+    """  # noqa: E501
 
     def __init__(self,
                  in_channels: int,
@@ -376,15 +380,15 @@ class ConformerEncoder(TransformerEncoder):
 
         # build all (num_layers) layers
         self.layers = nn.ModuleList([
-            ConformerEncoderLayer(
-                size=hidden_size,
-                ff_size=ff_size,
-                num_heads=num_heads,
-                dropout=dropout,
-                alpha=kwargs.get("alpha", 1.0),
-                layer_norm=kwargs.get("layer_norm", "pre"),
-                depthwise_conv_kernel_size=kwargs.get("depthwise_conv_kernel_size", 31)
-            ) for _ in range(num_layers)
+            ConformerEncoderLayer(size=hidden_size,
+                                  ff_size=ff_size,
+                                  num_heads=num_heads,
+                                  dropout=dropout,
+                                  alpha=kwargs.get("alpha", 1.0),
+                                  layer_norm=kwargs.get("layer_norm", "pre"),
+                                  depthwise_conv_kernel_size=kwargs.get(
+                                      "depthwise_conv_kernel_size", 31))
+            for _ in range(num_layers)
         ])
 
         self.pe = PositionalEncoding(hidden_size)

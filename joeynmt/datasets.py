@@ -196,7 +196,7 @@ class PlaintextDataset(BaseDataset):
         item = self.tokenizer[lang](line, is_train=is_train)
 
         if item is None:
-            logger.debug("Skip {}-th instance ({}): {}".format(idx, lang, line))
+            logger.debug("Skip %d-th instance (%s): {%s}", idx, lang, line)
         return item
 
     def _look_up_item(self, idx: int, lang: str) -> str:
@@ -318,7 +318,6 @@ class TsvDataset(BaseDataset):
             replace=False,
             random_state=seed,  # resample every epoch: seed += epoch_no
         ).reset_index()
-
 
     def reset_random_subset(self):
         if self._initial_df is not None:
@@ -567,20 +566,18 @@ class BaseHuggingfaceDataset(BaseDataset):
                  lang: str,
                  postproccessed: bool = False,
                  tokenized: bool = False) -> List[str]:
-        if postproccessed:
+        if postproccessed:  # pylint: disable=no-else-return
             if f"post_{lang}" not in self.dataset:
                 self.dataset = self.dataset.map(
-                    lambda item: {
-                        f"post_{lang}": self.tokenizer[lang].post_process(item[lang])
-                    },
+                    lambda item:
+                    {f"post_{lang}": self.tokenizer[lang].post_process(item[lang])},
                     desc=f"Postprocessing {lang}...")
             return self.dataset[f"post_{lang}"]
         elif tokenized:
             if f"tok_{lang}" not in self.dataset:
                 self.dataset = self.dataset.map(
-                    lambda item: {
-                        f"tok_{lang}": self.tokenizer[lang](item[lang], is_train=False)
-                    },
+                    lambda item:
+                    {f"tok_{lang}": self.tokenizer[lang](item[lang], is_train=False)},
                     desc=f"Tokenizing {lang}...")
             return self.dataset[f"tok_{lang}"]
         else:

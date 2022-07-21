@@ -404,10 +404,9 @@ class ConvolutionModule(nn.Module):
             depthwise_kernel_size: Depthwise conv layer kernel size
             dropout: dropout value
         """
-        super(ConvolutionModule, self).__init__()
-        assert (
-            depthwise_kernel_size - 1
-        ) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
+        super().__init__()
+        assert (depthwise_kernel_size -
+                1) % 2 == 0, "kernel_size should be a odd number for 'SAME' padding"
         self.layer_norm = nn.LayerNorm(hidden_size, eps=1e-6)
         self.pointwise_conv1 = nn.Conv1d(
             hidden_size,
@@ -468,7 +467,7 @@ class ConformerEncoderLayer(torch.nn.Module):
         alpha: float = 1.0,
         layer_norm: str = "pre",
     ):
-        super(ConformerEncoderLayer, self).__init__()
+        super().__init__()
 
         self.initial_feed_forward = PositionwiseFeedForward(
             size,
@@ -529,7 +528,7 @@ class ConformerEncoderLayer(torch.nn.Module):
         residual = x
         x = x.transpose(0, 1)  # [T, B, C] to [B, T, C]
         x = self.conv_module(x)
-        x = x.transpose(0, 1)   # [B, T, C] to [T, B, C]
+        x = x.transpose(0, 1)  # [B, T, C] to [T, B, C]
         x = x + self.alpha * residual
 
         # feed forward layer
