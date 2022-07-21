@@ -1,12 +1,14 @@
 import random
 import unittest
 
+import numpy as np
 import sentencepiece as spm
 
 from joeynmt.data import load_data
 from joeynmt.tokenizers import (
     BasicTokenizer,
     SentencePieceTokenizer,
+    SpeechProcessor,
     SubwordNMTTokenizer,
 )
 
@@ -201,3 +203,81 @@ class TestTokenizer(unittest.TestCase):
             tokenizer.dropout = 0.8
             dropout = tokenizer(detokenized, is_train=True)
             self.assertEqual(dropout, expected[lang]['dropout'])
+
+
+class TestSpeechProcessor(unittest.TestCase):
+
+    def setUp(self):
+
+        # minimal data config
+        self.data_cfg = {
+            "task": "s2t",
+            "train": "test/data/speech/test",
+            "src": {
+                "lang": "en",
+                "level": "frame",
+                "num_freq": 80,
+                "max_length": 500,
+                "tokenizer_type": "speech",
+                "tokenizer_cfg": {
+                    "specaugment": {
+                        "freq_mask_n": 1,
+                        "freq_mask_f": 5,
+                        "time_mask_n": 1,
+                        "time_mask_t": 10,
+                        "time_mask_p": 1.0,
+                    },
+                    "cmvn": {
+                        "norm_means": True,
+                        "norm_vars": True,
+                        "before": True,
+                    },
+                },
+            },
+            "trg": {
+                "lang": "en",
+                "level": "char",
+                "lowercase": True,
+                "max_length": 50,
+                "voc_file": "test/data/speech/char.txt"
+            },
+            "dataset_type": "speech",
+        }
+
+        # set seed
+        seed = 42
+        random.seed(seed)
+
+    def testSpeechProcessor(self):
+        current_cfg = self.data_cfg.copy()
+
+        # load speech data
+        _, _, train_data, _, _ = load_data(current_cfg, datasets=["train"])
+
+        # check tokenizer
+        tokenizer = train_data.tokenizer["src"]
+        self.assertIs(type(tokenizer), SpeechProcessor)
+
+        # take one train data point
+        train_src, train_trg = train_data[1]
+
+        # src ... spectrogram
+        train_src_expected = np.array([
+            -1.0788909,
+            -1.0076448,
+            -1.0421542,
+            -1.0393586,
+            -1.0239305,
+            -0.9921213,
+            -0.95107234,
+            -0.9340749,
+            -0.9119267,
+            -0.8962079,
+        ])
+        np.testing.assert_allclose(train_src[0, :10], train_src_expected, rtol=1e-5)
+
+        # trg ... char sequence
+        train_trg_expected = ['p', 'o', 'o', 'r', '▁', 'a', 'l', 'i', 'c', 'e', '!']
+        self.assertEqual(train_trg, train_trg_expected)
+
+        # TODO: test specaugment, cmvn

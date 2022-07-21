@@ -2,7 +2,11 @@ from test.unit.test_helpers import TensorTestCase
 
 import torch
 
-from joeynmt.encoders import TransformerEncoder, TransformerEncoderLayer
+from joeynmt.encoders import (
+    Conv1dSubsampler,
+    TransformerEncoder,
+    TransformerEncoderLayer,
+)
 
 
 class TestTransformerEncoder(TensorTestCase):
@@ -112,3 +116,65 @@ class TestTransformerEncoder(TensorTestCase):
                              self.ff_size)
             # pylint: disable=protected-access
             self.assertEqual(layer._layer_norm_position, self.layer_norm)
+
+
+class TestSubsampler(TensorTestCase):
+
+    def setUp(self):
+        self.hidden_size = 12
+        self.in_channels = 10
+        self.conv_channels = 24
+        self.conv_kernel_sizes = [3, 3]
+        self.seed = 42
+        torch.manual_seed(self.seed)
+
+    def test_subsampler_forward(self):
+        batch_size = 2
+        time_dim = 9
+
+        subsampler = Conv1dSubsampler(
+            in_channels=self.in_channels,
+            mid_channels=self.conv_channels,
+            out_channels=self.hidden_size,
+            kernel_sizes=self.conv_kernel_sizes,
+        )
+
+        for p in subsampler.parameters():
+            torch.nn.init.uniform_(p, -0.5, 0.5)
+
+        x = torch.rand(size=(batch_size, time_dim, self.in_channels))
+        x_length = torch.Tensor([time_dim] * batch_size).int()
+        x, x_length = subsampler(x, x_length)
+
+        # x shape [batch_size, seq_len, emb_dim]: [2, 9, 10] -> [2, 3, 12]
+        self.assertEqual(x.size(), torch.Size([batch_size, 3, self.hidden_size]))
+
+        x_target = torch.tensor([[[
+            -0.4831, -0.0188, -0.0643, 0.2323, 0.1843, -0.0599, 0.0333, -0.0295, 0.0926,
+            0.0629, 0.4416, -0.3737
+        ],
+                                  [
+                                      -0.0230, 0.0513, -0.2007, -0.2211, 0.7072, 0.0523,
+                                      -0.0546, 0.0382, -0.0606, -0.8240, -0.3379,
+                                      -0.7052
+                                  ],
+                                  [
+                                      0.0229, 0.1770, -0.2644, -0.5954, 0.8251, -0.0118,
+                                      -0.0228, -0.2697, 0.1242, 0.1570, -0.2263, -0.9022
+                                  ]],
+                                 [[
+                                     -0.4647, 0.0986, -0.1160, 0.0453, 0.2717, -0.0112,
+                                     0.0018, 0.0935, 0.2077, -0.2647, 0.3621, -0.4435
+                                 ],
+                                  [
+                                      0.0116, -0.1874, -0.0305, -0.5209, 0.7063,
+                                      -0.0522, 0.0577, 0.4307, 0.1027, -0.1947, 0.0964,
+                                      -0.8076
+                                  ],
+                                  [
+                                      -0.2909, -0.0827, -0.1345, -0.4011, 0.4482,
+                                      0.4247, 0.2187, -0.2467, 0.0096, -0.2841, 0.0799,
+                                      -1.2243
+                                  ]]])
+        self.assertTensorAlmostEqual(x, x_target)
+        self.assertTensorAlmostEqual(x_length, torch.tensor([3, 3]))

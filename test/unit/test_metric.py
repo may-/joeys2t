@@ -1,7 +1,8 @@
 import unittest
 from test.unit.test_helpers import TensorTestCase
 
-from joeynmt.metrics import bleu, chrf, token_accuracy
+from joeynmt.metrics import bleu, chrf, token_accuracy, wer
+from joeynmt.tokenizers import EvaluationTokenizer
 
 
 class TestMetrics(TensorTestCase):
@@ -51,3 +52,15 @@ class TestMetrics(TensorTestCase):
         # level = "char"
         score = token_accuracy(hyp, ref)
         self.assertEqual(score, 75.0)
+
+    def test_wer_13a(self):
+        tok = EvaluationTokenizer(lowercase=True, tokenize="13a", no_punc=True)
+
+        hyp = ["This is a test."]
+        ref = ["this is a Tezt!"]
+        score = wer(hyp, ref, tokenizer=tok)
+        self.assertEqual(score, 25.0)  # 1/4 = 0.25
+
+        tok.no_punc = False
+        score = wer(hyp, ref, tokenizer=tok)
+        self.assertEqual(score, 40.0)  # 2/5 = 0.4
