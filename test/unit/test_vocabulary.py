@@ -203,8 +203,8 @@ class TestVocabulary(unittest.TestCase):
         self.assertEqual(ids, expected_ids)
         self.assertEqual(length, expected_length)
 
-        decoded = self.word_vocab.arrays_to_sentences(np.array(ids),
-                                                      cut_at_eos=True,
-                                                      skip_pad=True)
+        decoded, _ = self.word_vocab.arrays_to_sentences(np.array(ids),
+                                                         cut_at_eos=True,
+                                                         skip_pad=True)
         self.assertEqual(decoded[0], ["<s>"] + tokenized[0] + ["</s>"])
         self.assertEqual(decoded[1], ["<s>"] + tokenized[1] + ["</s>"])
