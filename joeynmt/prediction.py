@@ -49,7 +49,7 @@ def predict(
     num_workers: int = 0,
     cfg: Dict = None,
 ) -> Tuple[Dict[str, float], List[str], List[str], List[List[str]], List[np.ndarray],
-           List[np.ndarray], ]:
+           List[np.ndarray]]:
     """
     Generates translations for the given data.
     If `compute_loss` is True and references are given, also computes the loss.
@@ -148,13 +148,18 @@ def predict(
 
             # don't track gradients during validation
             with torch.no_grad():
-                batch_loss, log_probs, _, n_correct = model(return_type="loss",
-                                                            **vars(batch))
+                return_type = "loss_probs" if return_prob == "ref" else "loss"
+                batch_loss, log_probs, ctc_log_probs, n_correct = model(
+                    return_type=return_type, **vars(batch))
+
                 # sum over multiple gpus
                 batch_loss = batch.normalize(batch_loss, "sum", n_gpu=n_gpu)
                 n_correct = batch.normalize(n_correct, "sum", n_gpu=n_gpu)
+
                 if return_prob == "ref":
                     ref_scores = batch.score(log_probs)
+                    # pylint: disable=unused-variable
+                    ref_ctc_scores = batch.score(ctc_log_probs)  # noqa: F841
                     output = batch.trg
 
             total_loss += batch_loss.item()  # cast Tensor to float
@@ -180,7 +185,8 @@ def predict(
             )
 
         # sort outputs back to original order
-        all_outputs.extend(output[sort_reverse_index])  # either hyp or ref
+        all_outputs.extend(output[sort_reverse_index]
+                           if output is not None else [])  # either hyp or ref
         valid_attention_scores.extend(attention_scores[sort_reverse_index]
                                       if attention_scores is not None else [])
         valid_sequence_scores.extend(
@@ -215,8 +221,8 @@ def predict(
         valid_scores["ppl"] = math.exp(total_loss / total_ntokens)
 
     # decode ids back to str symbols (cut-off AFTER eos; eos itself is included.)
-    decoded_valid = model.trg_vocab.arrays_to_sentences(arrays=all_outputs,
-                                                        cut_at_eos=True)
+    decoded_valid, valid_sequence_scores = model.trg_vocab.arrays_to_sentences(
+        arrays=all_outputs, score_arrays=valid_sequence_scores, cut_at_eos=True)
     # TODO: `valid_sequence_scores` should have the same seq length as `decoded_valid`
     #     -> needed to be cut-off at eos synchronously
 
@@ -361,8 +367,9 @@ def test(
                 "Scores of given references can be computed with greedy decoding only."
                 "Please set `beam_size: 1` in the config.")
             model.loss_function = (  # need to instantiate loss func to compute scores
-                cfg["training"].get("loss_type", "crossentropy"),
+                cfg["training"].get("loss", "crossentropy"),
                 cfg["training"].get("label_smoothing", 0.1),
+                cfg["training"].get("ctc_weight", 0.3),
             )
 
     # when checkpoint is not specified, take latest (best) from model dir
@@ -395,7 +402,7 @@ def test(
             _, _, hypotheses, hypotheses_raw, seq_scores, att_scores, = predict(
                 model=model,
                 data=data_set,
-                compute_loss=save_scores,
+                compute_loss=return_prob == "ref",
                 device=device,
                 n_gpu=n_gpu,
                 num_workers=num_workers,

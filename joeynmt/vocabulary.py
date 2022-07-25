@@ -109,46 +109,71 @@ class Vocabulary:
 
     def array_to_sentence(self,
                           array: np.ndarray,
+                          score_array: np.ndarray = None,
                           cut_at_eos: bool = True,
-                          skip_pad: bool = True) -> List[str]:
+                          skip_pad: bool = True) -> Tuple[List[str], List[float]]:
         """
         Converts an array of IDs to a sentence, optionally cutting the result off at the
         end-of-sequence token.
 
         :param array: 1D array containing indices
+        :param score_array: 1D array containing float scores
         :param cut_at_eos: cut the decoded sentences at the first <eos>
         :param skip_pad: skip generated <pad> tokens
-        :return: list of strings (tokens)
+        :return:
+            - list of strings (tokens)
+            - list of floats (scores)
         """
-        sentence = []
-        for i in array:
-            s = self._itos[i]
-            if skip_pad and s == PAD_TOKEN:
-                continue
-            sentence.append(s)
-            # break at the position AFTER eos
-            if cut_at_eos and s == EOS_TOKEN:
-                break
-        return sentence
+        if score_array is None:
+            score_array = [None for _ in range(len(array))]
+        assert len(array) == len(score_array)
 
-    def arrays_to_sentences(self,
-                            arrays: np.ndarray,
-                            cut_at_eos: bool = True,
-                            skip_pad: bool = True) -> List[List[str]]:
+        sentence, scores = [], []
+        for i, s in zip(array, score_array):
+            t = self._itos[i]
+            s = float('NaN') if s is None else s
+            if skip_pad and t == PAD_TOKEN:
+                continue
+            sentence.append(t)
+            scores.append(s)
+            # break at the position AFTER eos
+            if cut_at_eos and t == EOS_TOKEN:
+                break
+        assert len(sentence) == len(scores)
+        return sentence, scores
+
+    def arrays_to_sentences(
+            self,
+            arrays: np.ndarray,
+            score_arrays: np.ndarray = None,
+            cut_at_eos: bool = True,
+            skip_pad: bool = True) -> Tuple[List[List[str]], List[List[float]]]:
         """
         Convert multiple arrays containing sequences of token IDs to their sentences,
         optionally cutting them off at the end-of-sequence token.
 
         :param arrays: 2D array containing indices
+        :param score_arrays: 2D array containing float scores
         :param cut_at_eos: cut the decoded sentences at the first <eos>
         :param skip_pad: skip generated <pad> tokens
-        :return: list of list of strings (tokens)
+        :return:
+            - list of list of strings (tokens)
+            - list of list of floats (scores)
         """
-        return [
-            self.array_to_sentence(array=array,
-                                   cut_at_eos=cut_at_eos,
-                                   skip_pad=skip_pad) for array in arrays
-        ]
+        if score_arrays is None or len(score_arrays) == 0:
+            score_arrays = [None for _ in range(len(arrays))]
+        assert len(arrays) == len(score_arrays)
+
+        sentences, scores = [], []
+        for array, score_array in zip(arrays, score_arrays):
+            sent, score = self.array_to_sentence(array=array,
+                                                 score_array=score_array,
+                                                 cut_at_eos=cut_at_eos,
+                                                 skip_pad=skip_pad)
+            sentences.append(sent)
+            scores.append(score)
+        assert len(sentences) == len(scores)
+        return sentences, scores
 
     def sentences_to_ids(self,
                          sentences: List[List[str]],

@@ -4,6 +4,7 @@ Implements custom initialization
 """
 import logging
 import math
+from typing import Dict
 
 import torch
 from torch import Tensor, nn
@@ -59,7 +60,7 @@ def xavier_uniform_n_(w: Tensor, gain: float = 1.0, n: int = 4) -> None:
         nn.init.uniform_(w, -a, a)
 
 
-def compute_alpha_beta(num_enc_layers: int, num_dec_layers: int) -> float:
+def compute_alpha_beta(num_enc_layers: int, num_dec_layers: int) -> Dict[str, Dict]:
     """
     DeepNet: compute alpha/beta value suggested in https://arxiv.org/abs/2203.00555
     """

@@ -7,14 +7,12 @@ import heapq
 import logging
 import math
 import shutil
-import sys
 import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import List, Tuple
 
 import torch
-from torch import Tensor
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
@@ -36,15 +34,6 @@ from joeynmt.helpers import (
 )
 from joeynmt.model import Model, _DataParallel, build_model
 from joeynmt.prediction import predict, test
-
-# for fp16 training
-try:
-    from apex import amp
-
-    amp.register_half_function(torch, "einsum")
-except ImportError as no_apex:  # noqa: F841
-    # error handling in TrainManager object construction
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +113,16 @@ class TrainManager:
         self.optimizer = build_optimizer(config=cfg["training"],
                                          parameters=self.model.parameters())
 
+        # fp16
+        self.fp16: bool = fp16  # True or False for scaler
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.fp16)
+        if self.fp16:
+            self.dtype = torch.float16 if self.device.type == "cuda" else torch.bfloat16
+        else:
+            self.dtype = torch.get_default_dtype()
+
         # save/delete checkpoints
-        self.num_ckpts = keep_best_ckpts
+        self.num_ckpts: int = keep_best_ckpts
         self.ckpt_queue: List[Tuple[float, Path]] = []  # heap queue
 
         # early_stopping
@@ -173,21 +170,6 @@ class TrainManager:
             total_correct=0,
         )
 
-        # fp16
-        self.fp16 = fp16
-        if self.fp16:
-            if "apex" not in sys.modules:
-                # pylint: disable=used-before-assignment
-                raise ImportError(
-                    "Please install apex from https://www.github.com/nvidia/apex "
-                    "to use fp16 training.") from no_apex  # noqa: F821
-
-            self.model, self.optimizer = amp.initialize(self.model,
-                                                        self.optimizer,
-                                                        opt_level="O1")
-            # opt level: one of {"O0", "O1", "O2", "O3"}
-            # see https://nvidia.github.io/apex/amp.html#opt-levels
-
         # load model parameters
         if load_model is not None:
             self.init_from_checkpoint(
@@ -204,7 +186,7 @@ class TrainManager:
             if load_path is not None:
                 self.init_layers(path=load_path, layer=layer_name)
 
-        # gpu training (should be after apex fp16 initialization)
+        # gpu training
         if self.n_gpu > 1:
             self.model = _DataParallel(self.model)
 
@@ -251,12 +233,12 @@ class TrainManager:
             model_state_dict,
             "optimizer_state":
             self.optimizer.state_dict(),
+            "scaler_state":
+            self.scaler.state_dict(),
             "scheduler_state":
             (self.scheduler.state_dict() if self.scheduler is not None else None),
-            "amp_state":
-            amp.state_dict() if self.fp16 else None,
             "train_iter_state":
-            (self.train_iter.batch_sampler.sampler.generator.get_state()),
+            self.train_iter.batch_sampler.sampler.generator.get_state(),
             "total_correct":
             self.stats.total_correct,
         }
@@ -334,6 +316,8 @@ class TrainManager:
 
         if not reset_optimizer:
             self.optimizer.load_state_dict(model_checkpoint["optimizer_state"])
+            if "scaler_state" in model_checkpoint:
+                self.scaler.load_state_dict(model_checkpoint["scaler_state"])
         else:
             logger.info("Reset optimizer.")
 
@@ -364,10 +348,6 @@ class TrainManager:
         # move to gpu
         if self.device.type == "cuda":
             self.model.to(self.device)
-
-        # fp16
-        if self.fp16 and model_checkpoint.get("amp_state", None) is not None:
-            amp.load_state_dict(model_checkpoint["amp_state"])
 
     def init_layers(self, path: Path, layer: str) -> None:
         """
@@ -465,7 +445,7 @@ class TrainManager:
                 total_valid_duration = 0
                 start_tokens = self.stats.total_tokens
                 start_correct = self.stats.total_correct
-                self.model.zero_grad()
+                self.model.zero_grad(set_to_none=True)
                 epoch_loss = 0
                 total_batch_loss = 0
                 total_nll_loss = 0
@@ -509,21 +489,18 @@ class TrainManager:
                     if (i + 1) % self.batch_multiplier == 0:
                         # clip gradients (in-place)
                         if self.clip_grad_fun is not None:
-                            if self.fp16:
-                                self.clip_grad_fun(
-                                    parameters=amp.master_params(self.optimizer))
-                            else:
-                                self.clip_grad_fun(parameters=self.model.parameters())
+                            self.clip_grad_fun(parameters=self.model.parameters())
 
                         # make gradient step
-                        self.optimizer.step()
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
 
                         # decay lr
                         if self.scheduler_step_at == "step":
                             self.scheduler.step(self.stats.steps)
 
                         # reset gradients
-                        self.model.zero_grad()
+                        self.model.zero_grad(set_to_none=True)
 
                         # increment step counter
                         self.stats.steps += 1
@@ -613,7 +590,7 @@ class TrainManager:
 
         self.tb_writer.close()  # close Tensorboard writer
 
-    def _train_step(self, batch: Batch) -> Tensor:
+    def _train_step(self, batch: Batch) -> Tuple[float, float, float, float]:
         """
         Train the model on one batch: Compute the loss.
 
@@ -627,9 +604,12 @@ class TrainManager:
         # reactivate training
         self.model.train()
 
-        # get loss (run as during training with teacher forcing)
-        batch_loss, nll_loss, ctc_loss, correct_tokens = self.model(return_type="loss",
-                                                                    **vars(batch))
+        with torch.autocast(device_type=self.device.type,
+                            dtype=self.dtype,
+                            enabled=self.fp16):
+            # get loss (run as during training with teacher forcing)
+            batch_loss, nll_loss, ctc_loss, correct_tokens = self.model(
+                return_type="loss", **vars(batch))
 
         # normalize batch loss
         norm_batch_loss = batch.normalize(batch_loss, self.normalization, self.n_gpu,
@@ -647,11 +627,7 @@ class TrainManager:
         sum_correct_tokens = batch.normalize(correct_tokens, "sum", self.n_gpu)
 
         # accumulate gradients
-        if self.fp16:
-            with amp.scale_loss(norm_batch_loss, self.optimizer) as scaled_loss:
-                scaled_loss.backward()
-        else:
-            norm_batch_loss.backward()
+        self.scaler.scale(norm_batch_loss).backward()
 
         return (norm_batch_loss.item(),
                 norm_nll_loss.item() if norm_nll_loss is not None else None,

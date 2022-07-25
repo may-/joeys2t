@@ -123,11 +123,11 @@ def recurrent_greedy(
 
         # greedy decoding: choose arg max over vocabulary in each step
         prob, next_word = torch.max(out, dim=-1)  # batch x time=1
-        output.append(next_word.squeeze(1).detach().cpu().numpy())
+        output.append(next_word.squeeze(1).detach().cpu().float().numpy())
         if return_prob:
-            scores.append(prob.squeeze(1).detach().cpu().numpy())
+            scores.append(prob.squeeze(1).detach().cpu().float().numpy())
         prev_y = next_word
-        attention_scores.append(att_probs.squeeze(1).detach().cpu().numpy())
+        attention_scores.append(att_probs.squeeze(1).detach().cpu().float().numpy())
         # shape: (batch_size, max_src_length)
 
         # check if previous symbol was <eos>

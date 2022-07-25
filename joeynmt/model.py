@@ -25,6 +25,7 @@ from joeynmt.loss import XentCTCLoss, XentLoss
 from joeynmt.vocabulary import Vocabulary
 
 logger = logging.getLogger(__name__)
+DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Model(nn.Module):
@@ -92,6 +93,7 @@ class Model(nn.Module):
             self.decoder.ctc_output_layer = None
         self._loss_function = loss_function
 
+    @torch.autocast(device_type=DEVICE_TYPE)
     def forward(self,
                 return_type: str = None,
                 **kwargs) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -105,10 +107,10 @@ class Model(nn.Module):
         :param return_type: one of {"loss", "encode", "decode"}
         """
         if return_type is None:
-            raise ValueError("Please specify return_type: "
-                             "{`loss`, `encode`, `decode`, `decode_ctc`}.")
+            raise ValueError("Please specify return_type: {`loss`, `loss_probs`, "
+                             "`encode`, `decode`, `decode_ctc`}.")
 
-        if return_type == "loss":
+        if return_type.startswith("loss"):
             assert self.loss_function is not None
             assert "trg" in kwargs and "trg_mask" in kwargs  # need trg to compute loss
             return_tuple = [None, None, None, None]
@@ -138,6 +140,10 @@ class Model(nn.Module):
                 log_probs.argmax(-1).masked_select(trg_mask).eq(
                     kwargs["trg"].masked_select(trg_mask)))
             return_tuple[-1] = n_correct
+
+            if return_type == "loss_probs":
+                return_tuple[1] = log_probs
+                return_tuple[2] = kwargs.get("ctc_log_probs", None)
 
         elif return_type == "encode":
             encoder_output, encoder_hidden, src_mask = self._encode(**kwargs)
