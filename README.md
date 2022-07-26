@@ -1,5 +1,5 @@
 # &nbsp; ![Joey-NMT](joey2-small.png) Joey S2T
-[![build](https://github.com/may-/joeynmt/actions/workflows/main.yml/badge.svg)](https://github.com/may-/joeynmt/actions/workflows/main.yml)
+[![build](https://github.com/may-/joeys2t/actions/workflows/main.yml/badge.svg)](https://github.com/may-/joeys2t/actions/workflows/main.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 
@@ -9,13 +9,14 @@ JoeyS2T is an extention of [JoeyNMT](https://github.com/joeynmt/joeynmt) for Spe
 Joey S2T implements the following features:
 - Transformer Encoder-Decoder
 - 1d-Conv Subsampling
-- BPE tokenization (with BPE dropout option)
+- Cross-entropy and CTC joint obvective
 - Mel filterbank spectrogram extraction
 - CMVN, SpecAugment
 - WER evaluation
 
 Furthermore, all the functionalities in JoeyNMT v2.0 are also available from JoeyS2T:
 - BLEU and ChrF evaluation
+- BPE tokenization (with BPE dropout option)
 - Beam search and greedy decoding (with repetition penalty, ngram blocker)
 - Customizable initialization
 - Attention visualization
@@ -26,7 +27,7 @@ Furthermore, all the functionalities in JoeyNMT v2.0 are also available from Joe
 
 ## Installation
 JoeyS2T is built on [PyTorch](https://pytorch.org/). Please make sure you have a compatible environment.
-We tested Joey NMT with
+We tested JoeyS2T with
 - python 3.10
 - torch 1.11.0
 - cuda 11.5
@@ -42,12 +43,6 @@ Run the unit tests:
 $ python -m unittest
 ```
 
-**[Optional]** For fp16 training, install NVIDIA's [apex](https://github.com/NVIDIA/apex) library:
-```bash
-$ git clone https://github.com/NVIDIA/apex
-$ cd apex
-$ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
-```
 
 ## Documentation & Tutorials
 
@@ -64,15 +59,24 @@ For details, follow the tutorials in [notebooks](notebooks) dir.
 
 ### LibriSpeech
 
+**Data Preparation:**
 JoeyS2T requires tsv format input file to feed the data. You can get the tsv input file using the following script:
 ```
 $ python scripts/prepare_librispeech.py --data_root data/LibriSpeech
 ```
-Then you can speify the path to the tsv file generated above in your config.yaml and start the training:
+Then specify the path to the tsv files generated above in the configuration file.
+
+**Training:**
 ```
-$ python -m joeynmt train configs/librispeech_100h.yaml
-$ python -m joeynmt train configs/librispeech_960h.yaml
+$ python -m joeynmt train configs/librispeech_{100h|960h}.yaml
 ```
+
+**Inference:**
+```
+$ python -m joeynmt test configs/librispeech_{100h|960h}.yaml --output_path models/librispeech_{100h|960h}/hyps
+```
+*Note that the interactive `translate` mode is currently not supported for Speech-to-Text tasks. Please use `test` mode.
+
 
 #### LibriSpeech 100h
 
@@ -90,20 +94,19 @@ System | Architecture | dev-clean | dev-other | test-clean | test-other | #param
 ------ | :----------: | :-------- | --------: | ---------: | ---------: | ------: | :-------
 [Gulati etal](https://arxiv.org/abs/2005.08100) | BiLSTM | 1.9 | 4.4 | 2.1 | 4.9 | - | -
 [ESPnet](https://github.com/espnet/espnet/tree/master/egs2/librispeech/asr1#without-lm) | Conformer | 2.3 | 6.1 | 2.6 | 6.0 | - | -
-[SpeechBrain](https://huggingface.co/speechbrain/asr-transformer-transformerlm-librispeech) | Conformer |  | 5.51 | 2.31 | 5.61 | 165M | -
+[SpeechBrain](https://huggingface.co/speechbrain/asr-transformer-transformerlm-librispeech) | Conformer | 2.13 | 5.51 | 2.31 | 5.61 | 165M | -
 [facebook S2T](https://huggingface.co/facebook/s2t-small-librispeech-asr) | Transformer | 3.23 | 8.01 | 3.52 | 7.83 | 71M | -
 [facebook wav2vec2](https://huggingface.co/facebook/wav2vec2-base-960h) | Conformer | 3.17 | 8.87 | 3.39 | 8.57 | 94M | -
-JoeyS2T | Transformer | 3.50 | 8.44 | 3.78 | 8.32 | 102M | [librispeech100h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech100h.tar.gz) (1.1G)
+JoeyS2T | Transformer | 3.50 | 8.44 | 3.78 | 8.32 | 102M | [librispeech960h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech960h.tar.gz) (1.1G)
 
 *We compute the WER on lowercased transcriptions without punctuations using sacrebleu's 13a tokenizer.
-
-
+See [librispeech benchmarks](notebooks/librispeech_benchmarks.ipynb)
 
 
 ## Contact
-Please leave an issue if you have questions or issues with the code.
+Please leave an issue if you have found a bug in the code.
 
-For general questions, email me at `ohta <at> cl.uni-heidelberg.de`. :love_letter:
+For general questions, email me at `ohta <at> cl.uni-heidelberg.de`.
 
 
 
