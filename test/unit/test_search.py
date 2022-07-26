@@ -40,6 +40,9 @@ class TestSearch(TensorTestCase):
             [-1.171875, -1.2109375, -1.2109375],
         ])
 
+        # tolerance: cpu -> bfloat16, gpu -> float32
+        self.tol = 1e-5 if torch.cuda.is_available() else 0.01
+
 
 class TestSearchTransformer(TestSearch):
 
@@ -108,7 +111,9 @@ class TestSearchTransformer(TestSearch):
 
         # scores
         self.assertEqual(scores.shape, (batch_size, max_output_length))  # batch x time
-        np.testing.assert_allclose(scores, self.expected_transformer_scores, rtol=1e-5)
+        np.testing.assert_allclose(scores,
+                                   self.expected_transformer_scores,
+                                   rtol=self.tol)
 
     def test_transformer_beam1(self):
         batch_size = 2
@@ -137,7 +142,7 @@ class TestSearchTransformer(TestSearch):
         # batch_size * n_best x hyp_len
         self.assertEqual(beam_output.shape, (batch_size * n_best, max_output_length))
         np.testing.assert_equal(beam_output, self.expected_transformer_ids)
-        np.testing.assert_allclose(beam_scores, [[-4.1875], [-4.125]], rtol=1e-5)
+        np.testing.assert_allclose(beam_scores, [[-4.1875], [-4.125]], rtol=self.tol)
 
         # now compare to greedy, they should be the same for beam=1
         with torch.autocast(device_type="cpu", enabled=False):
@@ -153,7 +158,7 @@ class TestSearchTransformer(TestSearch):
         np.testing.assert_allclose(
             greedy_scores,
             self.expected_transformer_scores,
-            rtol=1e-5,
+            rtol=self.tol,
         )
 
     def test_transformer_beam7(self):
@@ -185,19 +190,9 @@ class TestSearchTransformer(TestSearch):
         expected_output = [[5, 5, 5], [0, 5, 5], [0, 0, 5], [5, 5, 0], [5, 0, 5],
                            [5, 5, 5], [0, 5, 5], [5, 5, 0], [5, 0, 5], [0, 0, 5]]
         np.testing.assert_equal(output, expected_output)
-        expected_scores = [
-            [-3.140625],
-            [-3.28125],
-            [-3.4375],
-            [-3.4375],
-            [-3.46875],
-            [-3.09375],
-            [-3.296875],
-            [-3.421875],
-            [-3.421875],
-            [-3.46875],
-        ]
-        np.testing.assert_allclose(scores, expected_scores, rtol=1e-5)
+        expected_scores = [[-3.140625], [-3.28125], [-3.4375], [-3.4375], [-3.46875],
+                           [-3.09375], [-3.296875], [-3.42187], [-3.42187], [-3.46875]]
+        np.testing.assert_allclose(scores, expected_scores, rtol=self.tol)
 
     def test_repetition_penalty_and_generate_unk(self):
         batch_size = 3
@@ -262,9 +257,9 @@ class TestSearchTransformer(TestSearch):
               [0.33203125, 0.33984375, 0.328125, 0.0]],
              [[0.25390625, 0.24511719, 0.265625, 0.23632812],
               [0.25390625, 0.24414062, 0.26367188, 0.23828125],
-              [0.24511719, 0.24023438, 0.26953125,
-               0.24609375]]])  # (batch_size, trg_len, src_len) = (3, 3, 4)
-        np.testing.assert_allclose(attention, expected_attention, rtol=1e-5)
+              [0.24511719, 0.24023438, 0.26953125, 0.24609375]]])
+        # attention (batch_size, trg_len, src_len) = (3, 3, 4)
+        np.testing.assert_allclose(attention, expected_attention, rtol=self.tol)
 
     def test_repetition_penalty_in_beam_search(self):
         batch_size = 2
@@ -318,7 +313,7 @@ class TestSearchTransformer(TestSearch):
         np.testing.assert_equal(output_with_penalty, expected_output_with_penalty)
         np.testing.assert_allclose(scores_with_penalty,
                                    expected_scores_with_penalty,
-                                   rtol=1e-5)
+                                   rtol=self.tol)
 
     def test_ngram_blocker(self):
         batch_size = 2
@@ -329,15 +324,11 @@ class TestSearchTransformer(TestSearch):
 
         expected_output = [[5, 5, 5, 0, 5, 5, 0, 0, 5, 0],
                            [5, 5, 5, 0, 5, 5, 0, 0, 5, 0]]
-        expected_scores = np.array([[
-            -1.257812, -1.382812, -1.421875, -1.78125, -1.359375, -1.40625, -1.835938,
-            -1.46875, -1.382812, -1.828125
-        ],
-                                    [
-                                        -1.234375, -1.382812, -1.414062, -1.796875,
-                                        -1.34375, -1.398438, -1.84375, -1.507812,
-                                        -1.359375, -1.835938
-                                    ]])
+        # yapf: disable
+        expected_scores = [[-1.257812, -1.382812, -1.421875, -1.78125, -1.359375,
+                            -1.40625, -1.835938, -1.46875, -1.382812, -1.828125],
+                           [-1.234375, -1.382812, -1.414062, -1.796875, -1.34375,
+                            -1.398438, -1.84375, -1.507812, -1.359375, -1.835938]]
         with torch.autocast(device_type="cpu", enabled=False):
             output, scores, _ = greedy(
                 src_mask=src_mask,
@@ -350,7 +341,7 @@ class TestSearchTransformer(TestSearch):
                 no_repeat_ngram_size=no_repeat_ngram_size,
             )
         np.testing.assert_equal(output, expected_output)
-        np.testing.assert_allclose(scores, expected_scores, rtol=1e-5)
+        np.testing.assert_allclose(scores, expected_scores, rtol=self.tol)
 
     def test_ngram_blocker_in_beam_search(self):
         batch_size = 2
@@ -388,7 +379,7 @@ class TestSearchTransformer(TestSearch):
             )
 
         np.testing.assert_equal(output, expected_output)
-        np.testing.assert_allclose(scores, expected_scores, rtol=1e-5)
+        np.testing.assert_allclose(scores, expected_scores, rtol=self.tol)
 
 
 class TestSearchRecurrent(TestSearch):
@@ -459,7 +450,9 @@ class TestSearchRecurrent(TestSearch):
             )
         self.assertEqual(output.shape, (batch_size, max_output_length))
         np.testing.assert_equal(output, self.expected_recurrent_ids)
-        np.testing.assert_allclose(scores, self.expected_recurrent_scores, rtol=1e-5)
+        np.testing.assert_allclose(scores,
+                                   self.expected_recurrent_scores,
+                                   rtol=self.tol)
 
         expected_attention_scores = np.array(
             [[[0.22949219, 0.24707031, 0.21386719, 0.31445312],
@@ -493,7 +486,7 @@ class TestSearchRecurrent(TestSearch):
         np.testing.assert_allclose(
             greedy_scores,
             self.expected_recurrent_scores,
-            rtol=1e-5,
+            rtol=self.tol,
         )
 
         beam_size = 1
@@ -512,7 +505,9 @@ class TestSearchRecurrent(TestSearch):
                 return_prob="hyp",
             )
         np.testing.assert_array_equal(greedy_output, beam_output)
-        np.testing.assert_allclose(beam_scores, [[-3.65625], [-3.609375]], rtol=1e-5)
+        np.testing.assert_allclose(beam_scores,
+                                   [[-3.65625], [-3.609375]],
+                                   rtol=self.tol)
 
     def test_recurrent_beam7(self):
         batch_size = 2
@@ -556,4 +551,4 @@ class TestSearchRecurrent(TestSearch):
             [-2.8125],
             [-2.875],
         ]
-        np.testing.assert_allclose(scores, expected_scores, rtol=1e-5)
+        np.testing.assert_allclose(scores, expected_scores, rtol=self.tol)

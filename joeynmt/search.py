@@ -95,21 +95,23 @@ def recurrent_greedy(
     hidden = None
     prev_att_vector = None
     finished = src_mask.new_zeros((batch_size, 1)).byte()
+    device = encoder_output.device
 
     for step in range(max_output_length):
         # decode one single step
-        with torch.no_grad():
-            out, hidden, att_probs, prev_att_vector = model(
-                return_type="decode",
-                trg_input=prev_y,
-                encoder_output=encoder_output,
-                encoder_hidden=encoder_hidden,
-                src_mask=src_mask,
-                unroll_steps=1,
-                decoder_hidden=hidden,
-                att_vector=prev_att_vector,
-            )
-            # out: batch x time=1 x vocab (logits)
+        with torch.autocast(device_type=device.type):
+            with torch.no_grad():
+                out, hidden, att_probs, prev_att_vector = model(
+                    return_type="decode",
+                    trg_input=prev_y,
+                    encoder_output=encoder_output,
+                    encoder_hidden=encoder_hidden,
+                    src_mask=src_mask,
+                    unroll_steps=1,
+                    decoder_hidden=hidden,
+                    att_vector=prev_att_vector,
+                )
+                # out: batch x time=1 x vocab (logits)
 
         if return_prob:
             out = F.log_softmax(out, dim=-1)
@@ -171,6 +173,7 @@ def transformer_greedy(
     unk_index = model.unk_index
     pad_index = model.pad_index
     batch_size, _, src_len = src_mask.size()
+    device = encoder_output.device
 
     # options to control generation
     generate_unk: bool = kwargs.get("generate_unk", True)  # whether to generate UNK
@@ -201,67 +204,69 @@ def transformer_greedy(
     finished = src_mask.new_zeros(batch_size).byte()
 
     for step in range(max_output_length):
-        with torch.no_grad():
-            out, _, att, _ = model(
-                return_type="decode",
-                trg_input=ys,  # model.trg_embed(ys) # embed the previous tokens
-                encoder_output=encoder_output,
-                encoder_hidden=None,
-                src_mask=src_mask,
-                unroll_steps=None,
-                decoder_hidden=None,
-                trg_mask=trg_mask,
-                return_attention=return_attention,
-            )
-            out = out[:, -1]  # logits
-            if not generate_unk:
-                out[:, unk_index] = float("-inf")
+        with torch.autocast(device_type=device.type):
+            with torch.no_grad():
+                out, _, att, _ = model(
+                    return_type="decode",
+                    trg_input=ys,  # model.trg_embed(ys) # embed the previous tokens
+                    encoder_output=encoder_output,
+                    encoder_hidden=None,
+                    src_mask=src_mask,
+                    unroll_steps=None,
+                    decoder_hidden=None,
+                    trg_mask=trg_mask,
+                    return_attention=return_attention,
+                )
 
-            # don't generate EOS until we reached min_output_length
-            if step < min_output_length:
-                out[:, eos_index] = float("-inf")
+        out = out[:, -1]  # logits
+        if not generate_unk:
+            out[:, unk_index] = float("-inf")
 
-            if compute_softmax:
-                out = F.log_softmax(out, dim=-1)
+        # don't generate EOS until we reached min_output_length
+        if step < min_output_length:
+            out[:, eos_index] = float("-inf")
 
-                # ngram blocker
-                if no_repeat_ngram_size > 1:
-                    out = block_repeat_ngrams(
-                        ys,
-                        out,
-                        no_repeat_ngram_size,
-                        step,
-                        src_tokens=encoder_input,
-                        exclude_tokens=[bos_index, eos_index, unk_index, pad_index],
-                    )
+        if compute_softmax:
+            out = F.log_softmax(out, dim=-1)
 
-                # repetition_penalty
-                if repetition_penalty > 1.0:
+            # ngram blocker
+            if no_repeat_ngram_size > 1:
+                out = block_repeat_ngrams(
+                    ys,
+                    out,
+                    no_repeat_ngram_size,
+                    step,
+                    src_tokens=encoder_input,
+                    exclude_tokens=[bos_index, eos_index, unk_index, pad_index],
+                )
+
+            # repetition_penalty
+            if repetition_penalty > 1.0:
+                out = penalize_repetition(
+                    ys,
+                    out,
+                    repetition_penalty,
+                    exclude_tokens=[bos_index, eos_index, unk_index, pad_index],
+                )
+                if encoder_input is not None:
                     out = penalize_repetition(
-                        ys,
+                        encoder_input,
                         out,
                         repetition_penalty,
                         exclude_tokens=[bos_index, eos_index, unk_index, pad_index],
                     )
-                    if encoder_input is not None:
-                        out = penalize_repetition(
-                            encoder_input,
-                            out,
-                            repetition_penalty,
-                            exclude_tokens=[bos_index, eos_index, unk_index, pad_index],
-                        )
 
-            # take the most likely token
-            prob, next_word = torch.max(out, dim=1)
-            next_word = next_word.data
-            ys = torch.cat([ys, next_word.unsqueeze(-1)], dim=1)
-            if return_prob:
-                prob = prob.data
-                yv = torch.cat([yv, prob.unsqueeze(-1)], dim=1)
-            if return_attention:
-                assert att is not None
-                att = att.data[:, -1, :].unsqueeze(1)  # take last trg token only
-                yt = torch.cat([yt, att], dim=1)  # (batch_size, trg_len, src_len)
+        # take the most likely token
+        prob, next_word = torch.max(out, dim=1)
+        next_word = next_word.data
+        ys = torch.cat([ys, next_word.unsqueeze(-1)], dim=1)
+        if return_prob:
+            prob = prob.data
+            yv = torch.cat([yv, prob.unsqueeze(-1)], dim=1)
+        if return_attention:
+            assert att is not None
+            att = att.data[:, -1, :].unsqueeze(1)  # take last trg token only
+            yt = torch.cat([yt, att], dim=1)  # (batch_size, trg_len, src_len)
 
         # check if previous symbol was <eos>
         is_eos = torch.eq(next_word, eos_index)
@@ -416,18 +421,19 @@ def beam_search(
             decoder_input = alive_seq
 
             # decode one single step
-            with torch.no_grad():
-                logits, _, _, _ = model(  # logits before final softmax
-                    return_type="decode",
-                    encoder_output=encoder_output,
-                    encoder_hidden=None,  # only for initializing decoder_hidden
-                    src_mask=src_mask,
-                    trg_input=decoder_input,  # trg_embed = embed(decoder_input)
-                    decoder_hidden=None,  # don't need to keep it for transformer
-                    att_vector=None,  # don't need to keep it for transformer
-                    unroll_steps=1,
-                    trg_mask=trg_mask,  # subsequent mask for Transformer only
-                )
+            with torch.autocast(device_type=device.type):
+                with torch.no_grad():
+                    logits, _, _, _ = model(  # logits before final softmax
+                        return_type="decode",
+                        encoder_output=encoder_output,
+                        encoder_hidden=None,  # only for initializing decoder_hidden
+                        src_mask=src_mask,
+                        trg_input=decoder_input,  # trg_embed = embed(decoder_input)
+                        decoder_hidden=None,  # don't need to keep it for transformer
+                        att_vector=None,  # don't need to keep it for transformer
+                        unroll_steps=1,
+                        trg_mask=trg_mask,  # subsequent mask for Transformer only
+                    )
 
             # For the Transformer we made predictions for all time steps up to this
             # point, so we only want to know about the last time step.
@@ -437,19 +443,20 @@ def beam_search(
             # For Recurrent models, only feed the previous trg word prediction
             decoder_input = alive_seq[:, -1].view(-1, 1)  # only the last word
 
-            with torch.no_grad():
-                # pylint: disable=unused-variable
-                logits, hidden, att_scores, att_vectors = model(
-                    return_type="decode",
-                    encoder_output=encoder_output,
-                    encoder_hidden=None,  # only for initializing decoder_hidden
-                    src_mask=src_mask,
-                    trg_input=decoder_input,  # trg_embed = embed(decoder_input)
-                    decoder_hidden=hidden,
-                    att_vector=att_vectors,
-                    unroll_steps=1,
-                    trg_mask=None,  # subsequent mask for Transformer only
-                )
+            with torch.autocast(device_type=device.type):
+                with torch.no_grad():
+                    # pylint: disable=unused-variable
+                    logits, hidden, att_scores, att_vectors = model(
+                        return_type="decode",
+                        encoder_output=encoder_output,
+                        encoder_hidden=None,  # only for initializing decoder_hidden
+                        src_mask=src_mask,
+                        trg_input=decoder_input,  # trg_embed = embed(decoder_input)
+                        decoder_hidden=hidden,
+                        att_vector=att_vectors,
+                        unroll_steps=1,
+                        trg_mask=None,  # subsequent mask for Transformer only
+                    )
 
         # compute log probability distribution over trg vocab
         # `log_probs` shape: (remaining_batch_size * beam_size, trg_vocab)
@@ -689,9 +696,11 @@ def search(
         - stacked_scores: log probabilities for batch,
         - stacked_attention_scores: attention scores for batch
     """
-    with torch.no_grad():
-        encoder_output, encoder_hidden, src_mask, _ = model(return_type="encode",
-                                                            **vars(batch))
+    device = batch.src.device
+    with torch.autocast(device_type=device.type):
+        with torch.no_grad():
+            encoder_output, encoder_hidden, src_mask, _ = model(return_type="encode",
+                                                                **vars(batch))
 
     src_mask = src_mask if batch.src_mask is None else batch.src_mask
     assert src_mask is not None
