@@ -188,8 +188,9 @@ class TestSearchTransformer(TestSearch):
         # batch_size * n_best x hyp_len (= time steps)
         self.assertEqual(output.shape, (batch_size * n_best, max_output_length))
         expected_output = [[5, 5, 5], [0, 5, 5], [0, 0, 5], [5, 5, 0], [5, 0, 5],
-                           [5, 5, 5], [0, 5, 5], [5, 5, 0], [5, 0, 5], [0, 0, 5]]
+                           [5, 5, 5], [0, 5, 5], [5, 0, 5], [5, 5, 0], [0, 0, 5]]
         np.testing.assert_equal(output, expected_output)
+
         expected_scores = [[-3.140625], [-3.28125], [-3.4375], [-3.4375], [-3.46875],
                            [-3.09375], [-3.296875], [-3.42187], [-3.42187], [-3.46875]]
         np.testing.assert_allclose(scores, expected_scores, rtol=self.tol)
@@ -279,8 +280,8 @@ class TestSearchTransformer(TestSearch):
             [0, 5, 6],
             [5, 1, 0],
             [1, 0, 5],
-            [0, 5, 1],
             [4, 0, 5],
+            [0, 5, 1],
             [0, 5, 3],
         ]
         expected_scores_with_penalty = [
