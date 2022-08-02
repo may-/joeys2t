@@ -56,51 +56,10 @@ For details, follow the tutorials in [notebooks](notebooks) dir.
 
 ## Benchmarks & pretrained models
 
+We provide [benchmarks](benchmarks_s2t.md) and pretraind models for Speech recognition (ASR) and speech-to-text translation (ST) with JoeyS2T.
 
-### LibriSpeech
-
-**Data Preparation:**
-JoeyS2T requires tsv format input file to feed the data. You can get the tsv input file using the following script:
-```
-$ python scripts/prepare_librispeech.py --data_root data/LibriSpeech
-```
-Then specify the path to the tsv files generated above in the configuration file.
-
-**Training:**
-```
-$ python -m joeynmt train configs/librispeech_{100h|960h}.yaml
-```
-
-**Inference:**
-```
-$ python -m joeynmt test configs/librispeech_{100h|960h}.yaml --output_path models/librispeech_{100h|960h}/hyps
-```
-*Note that the interactive `translate` mode is currently not supported for Speech-to-Text tasks. Please use `test` mode.
-
-
-#### LibriSpeech 100h
-
-System | Architecture | dev-clean | dev-other | test-clean | test-other | #params | download
------- | :----------: | :-------- | --------: | ---------: | ---------: | ------: | :-------
-[Kahn etal](https://arxiv.org/abs/1909.09116) | BiLSTM | 14.00 | 37.02 | 14.85 | 39.95 | - | -
-[Laptev etal](https://arxiv.org/abs/2005.07157) | Transformer | 10.3 | 24.0 | 11.2 | 24.9 | - | -
-[ESPnet](https://github.com/espnet/espnet/tree/master/egs2/librispeech_100/asr1#asr_transformer_win400_hop160_ctc03_lr2e-3_warmup15k_timemask5_amp_no-deterministic) | Transformer | 8.1 | 20.2 | 8.4 | 20.5 | - | -
-[ESPnet](https://github.com/espnet/espnet/tree/master/egs2/librispeech_100/asr1#asr_conformer_win400_hop160_ctc03_lr2e-3_warmup15k_timemask5_amp_no-deterministic) | Conformer | 6.3 | 17.0 | 6.5 | 17.3 | - | -
-JoeyS2T | Transformer | 10.18 | 23.39 | 11.58 | 24.31 | 93M | [librispeech100h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech100h.tar.gz) (948M)
-
-#### LibriSpeech 960h
-
-System | Architecture | dev-clean | dev-other | test-clean | test-other | #params | download
------- | :----------: | :-------- | --------: | ---------: | ---------: | ------: | :-------
-[Gulati etal](https://arxiv.org/abs/2005.08100) | BiLSTM | 1.9 | 4.4 | 2.1 | 4.9 | - | -
-[ESPnet](https://github.com/espnet/espnet/tree/master/egs2/librispeech/asr1#without-lm) | Conformer | 2.3 | 6.1 | 2.6 | 6.0 | - | -
-[SpeechBrain](https://huggingface.co/speechbrain/asr-transformer-transformerlm-librispeech) | Conformer | 2.13 | 5.51 | 2.31 | 5.61 | 165M | -
-[facebook S2T](https://huggingface.co/facebook/s2t-small-librispeech-asr) | Transformer | 3.23 | 8.01 | 3.52 | 7.83 | 71M | -
-[facebook wav2vec2](https://huggingface.co/facebook/wav2vec2-base-960h) | Conformer | 3.17 | 8.87 | 3.39 | 8.57 | 94M | -
-JoeyS2T | Transformer | 3.50 | 8.44 | 3.78 | 8.32 | 102M | [librispeech960h.tar.gz](https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2/librispeech960h.tar.gz) (1.1G)
-
-*We compute the WER on lowercased transcriptions without punctuations using sacrebleu's 13a tokenizer.
-See [librispeech benchmarks](notebooks/librispeech_benchmarks.ipynb)
+- [ASR on LibriSpeech](benchmarks_s2t.md#librispeech)
+- [ST on MuST-C en-de](benchmarks_s2t.md#must-c-v2-en-de)
 
 
 ## Contact
