@@ -24,7 +24,7 @@ def greedy(
     encoder_output: Tensor,
     encoder_hidden: Tensor,
     **kwargs,
-) -> Tuple[np.array, np.array, np.ndarray]:
+) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Greedy decoding. Select the token word highest probability at each time step.
     This function is a wrapper that calls recurrent_greedy for recurrent decoders and
@@ -65,7 +65,7 @@ def recurrent_greedy(
     encoder_output: Tensor,
     encoder_hidden: Tensor,
     **kwargs,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Greedy decoding: in each step, choose the word that gets highest score.
     Version for recurrent decoder.
@@ -96,10 +96,11 @@ def recurrent_greedy(
     prev_att_vector = None
     finished = src_mask.new_zeros((batch_size, 1)).byte()
     device = encoder_output.device
+    fp16 = kwargs.get("fp16", False)
 
     for step in range(max_output_length):
         # decode one single step
-        with torch.autocast(device_type=device.type):
+        with torch.autocast(device_type=device.type, enabled=fp16):
             with torch.no_grad():
                 out, hidden, att_probs, prev_att_vector = model(
                     return_type="decode",
@@ -125,11 +126,11 @@ def recurrent_greedy(
 
         # greedy decoding: choose arg max over vocabulary in each step
         prob, next_word = torch.max(out, dim=-1)  # batch x time=1
-        output.append(next_word.squeeze(1).detach().cpu().float().numpy())
+        output.append(next_word.squeeze(1).detach().cpu())
         if return_prob:
-            scores.append(prob.squeeze(1).detach().cpu().float().numpy())
+            scores.append(prob.squeeze(1).detach().cpu())
         prev_y = next_word
-        attention_scores.append(att_probs.squeeze(1).detach().cpu().float().numpy())
+        attention_scores.append(att_probs.squeeze(1).detach().cpu())
         # shape: (batch_size, max_src_length)
 
         # check if previous symbol was <eos>
@@ -139,9 +140,9 @@ def recurrent_greedy(
         if (finished >= 1).sum() == batch_size:
             break
 
-    stacked_output = np.stack(output, axis=1)  # batch, time
-    stacked_scores = np.stack(scores, axis=1) if return_prob else None
-    stacked_attention_scores = np.stack(attention_scores, axis=1)
+    stacked_output = torch.stack(output, dim=1).long()  # batch, time
+    stacked_scores = torch.stack(scores, dim=1).float() if return_prob else None
+    stacked_attention_scores = torch.stack(attention_scores, dim=1).float()
     return stacked_output, stacked_scores, stacked_attention_scores
 
 
@@ -152,7 +153,7 @@ def transformer_greedy(
     encoder_output: Tensor,
     encoder_hidden: Tensor,
     **kwargs,
-) -> Tuple[np.ndarray, np.ndarray, None]:
+) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Special greedy function for transformer, since it works differently.
     The transformer remembers all previous states and attends to them.
@@ -174,6 +175,7 @@ def transformer_greedy(
     pad_index = model.pad_index
     batch_size, _, src_len = src_mask.size()
     device = encoder_output.device
+    fp16: bool = kwargs.get("fp16", False)
 
     # options to control generation
     generate_unk: bool = kwargs.get("generate_unk", True)  # whether to generate UNK
@@ -204,7 +206,7 @@ def transformer_greedy(
     finished = src_mask.new_zeros(batch_size).byte()
 
     for step in range(max_output_length):
-        with torch.autocast(device_type=device.type):
+        with torch.autocast(device_type=device.type, enabled=fp16):
             with torch.no_grad():
                 out, _, att, _ = model(
                     return_type="decode",
@@ -276,9 +278,10 @@ def transformer_greedy(
             break
 
     # remove BOS-symbol
-    output = ys[:, 1:].detach().cpu().numpy()
-    scores = yv[:, 1:].detach().cpu().numpy() if return_prob else None
-    attention = yt[:, 1:, :].detach().cpu().numpy() if return_attention else None
+
+    output = ys[:, 1:].detach().cpu().long()
+    scores = yv[:, 1:].detach().cpu().float() if return_prob else None
+    attention = yt[:, 1:, :].detach().cpu().float() if return_attention else None
     assert output.shape[0] == batch_size, (output.shape, batch_size)
     return output, scores, attention
 
@@ -293,7 +296,7 @@ def beam_search(
     alpha: float,
     n_best: int = 1,
     **kwargs,
-) -> Tuple[np.ndarray, np.ndarray, None]:
+) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Beam search with size k. In each decoding step, find the k most likely partial
     hypotheses. Inspired by OpenNMT-py, adapted for Transformer.
@@ -335,6 +338,7 @@ def beam_search(
 
     trg_vocab_size = model.decoder.output_size
     device = encoder_output.device
+    fp16: bool = kwargs.get("fp16", False)
     is_transformer = isinstance(model.decoder, TransformerDecoder)
 
     att_vectors = None  # for RNN only, not used for Transformer
@@ -421,7 +425,7 @@ def beam_search(
             decoder_input = alive_seq
 
             # decode one single step
-            with torch.autocast(device_type=device.type):
+            with torch.autocast(device_type=device.type, enabled=fp16):
                 with torch.no_grad():
                     logits, _, _, _ = model(  # logits before final softmax
                         return_type="decode",
@@ -443,7 +447,7 @@ def beam_search(
             # For Recurrent models, only feed the previous trg word prediction
             decoder_input = alive_seq[:, -1].view(-1, 1)  # only the last word
 
-            with torch.autocast(device_type=device.type):
+            with torch.autocast(device_type=device.type, enabled=fp16):
                 with torch.no_grad():
                     # pylint: disable=unused-variable
                     logits, hidden, att_scores, att_vectors = model(
@@ -653,7 +657,7 @@ def beam_search(
 
     def pad_and_stack_hyps(hyps: List[np.ndarray]):
         max_len = max([hyp.shape[0] for hyp in hyps])
-        filled = np.ones((len(hyps), max_len), dtype=int) * pad_index
+        filled = torch.ones((len(hyps), max_len), dtype=torch.int64) * pad_index
         for j, h in enumerate(hyps):
             for k, i in enumerate(h):
                 filled[j, k] = i
@@ -661,12 +665,12 @@ def beam_search(
 
     # from results to stacked outputs
     # `final_outputs`: shape (batch_size * n_best, hyp_len)
-    predictions_list = [u.cpu().numpy() for r in results["predictions"] for u in r]
+    predictions_list = [u.cpu().float() for r in results["predictions"] for u in r]
     final_outputs = pad_and_stack_hyps(predictions_list)
 
     # sequence-wise log probabilities (summed up over the sequence)
     # `scores`: shape (batch_size * n_best, 1)
-    scores = np.array([[u.item()] for r in results["scores"] for u in r]) \
+    scores = torch.tensor([[u.item()] for r in results["scores"] for u in r]) \
         if return_prob else None
 
     assert final_outputs.shape[0] == batch_size * n_best
@@ -697,11 +701,11 @@ def search(
         - stacked_attention_scores: attention scores for batch
     """
     device = batch.src.device
-    with torch.autocast(device_type=device.type):
+    fp16: bool = kwargs.get("fp16", False)
+    with torch.autocast(device_type=device.type, enabled=fp16):
         with torch.no_grad():
             encoder_output, encoder_hidden, src_mask, _ = model(return_type="encode",
                                                                 **vars(batch))
-
     src_mask = src_mask if batch.src_mask is None else batch.src_mask
     assert src_mask is not None
 
@@ -738,7 +742,17 @@ def search(
             **kwargs,
         )
 
-    return stacked_output, stacked_scores, stacked_attention_scores
+    # cast to numpy nd.array
+    def _to_numpy(t: Tensor):
+        if torch.is_tensor(t):
+            return t.detach().cpu().numpy()
+        return t  # if t is None
+
+    return (
+        _to_numpy(stacked_output),
+        _to_numpy(stacked_scores),
+        _to_numpy(stacked_attention_scores),
+    )
 
 
 def block_repeat_ngrams(tokens: Tensor, scores: Tensor, no_repeat_ngram_size: int,

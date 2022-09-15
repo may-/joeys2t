@@ -5,7 +5,7 @@ Tokenizer module
 import logging
 import shutil
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 import sentencepiece as sp
@@ -78,6 +78,10 @@ class BasicTokenizer:
                 Pre-tokenize(add extra white space before punc) etc.
             - applied for all inputs both in training and inference.
         """
+        assert isinstance(raw_input, str) and raw_input.strip() != "", \
+            "The input sentence is empty! Please make sure " \
+            "that you are feeding a valid input."
+
         if self.normalize:
             raw_input = remove_extra_spaces(unicode_normalize(raw_input))
 
@@ -117,24 +121,27 @@ class BasicTokenizer:
         specials = self.SPECIALS[:-1] if generate_unk else self.SPECIALS
         return [token for token in sequence if token not in specials]
 
-    def post_process(self, sequence: List[str], generate_unk: bool = True) -> str:
+    def post_process(self,
+                     sequence: Union[List[str], str],
+                     generate_unk: bool = True) -> str:
         """Detokenize"""
-        sequence = self._remove_special(sequence, generate_unk=generate_unk)
-        if self.level == "word":
-            if self.pretokenizer == "moses":
-                detokenized = self.moses_detokenizer.detokenize(sequence)
-            else:
-                detokenized = self.SPACE.join(sequence)
-        elif self.level == "char":
-            detokenized = "".join(sequence).replace(self.SPACE_ESCAPE, self.SPACE)
+        if isinstance(sequence, list):
+            sequence = self._remove_special(sequence, generate_unk=generate_unk)
+            if self.level == "word":
+                if self.pretokenizer == "moses":
+                    sequence = self.moses_detokenizer.detokenize(sequence)
+                else:
+                    sequence = self.SPACE.join(sequence)
+            elif self.level == "char":
+                sequence = "".join(sequence).replace(self.SPACE_ESCAPE, self.SPACE)
 
         # Remove extra spaces
         if self.normalize:
-            detokenized = remove_extra_spaces(detokenized)
+            sequence = remove_extra_spaces(sequence)
 
         # ensure the string is not empty.
-        assert detokenized is not None and len(detokenized) > 0, detokenized
-        return detokenized
+        assert sequence is not None and len(sequence) > 0, sequence
+        return sequence
 
     def set_vocab(self, itos: List[str]) -> None:
         """
@@ -188,25 +195,28 @@ class SentencePieceTokenizer(BasicTokenizer):
             return None
         return tokenized
 
-    def post_process(self, sequence: List[str], generate_unk: bool = True) -> str:
+    def post_process(self,
+                     sequence: Union[List[str], str],
+                     generate_unk: bool = True) -> str:
         """Detokenize"""
-        sequence = self._remove_special(sequence, generate_unk=generate_unk)
+        if isinstance(sequence, list):
+            sequence = self._remove_special(sequence, generate_unk=generate_unk)
 
-        # Decode back to str
-        detokenized = self.spm.decode(sequence)
-        detokenized = detokenized.replace(self.SPACE_ESCAPE, self.SPACE).strip()
+            # Decode back to str
+            sequence = self.spm.decode(sequence)
+            sequence = sequence.replace(self.SPACE_ESCAPE, self.SPACE).strip()
 
         # Apply moses detokenizer
         if self.pretokenizer == "moses":
-            detokenized = self.moses_detokenizer.detokenize(detokenized.split())
+            sequence = self.moses_detokenizer.detokenize(sequence.split())
 
         # Remove extra spaces
         if self.normalize:
-            detokenized = remove_extra_spaces(detokenized)
+            sequence = remove_extra_spaces(sequence)
 
         # ensure the string is not empty.
-        assert detokenized is not None and len(detokenized) > 0, detokenized
-        return detokenized
+        assert sequence is not None and len(sequence) > 0, sequence
+        return sequence
 
     def set_vocab(self, itos: List[str]) -> None:
         """Set vocab"""
@@ -268,27 +278,31 @@ class SubwordNMTTokenizer(BasicTokenizer):
             return None
         return tokenized
 
-    def post_process(self, sequence: List[str], generate_unk: bool = True) -> str:
+    def post_process(self,
+                     sequence: Union[List[str], str],
+                     generate_unk: bool = True) -> str:
         """Detokenize"""
-        sequence = self._remove_special(sequence, generate_unk=generate_unk)
+        if isinstance(sequence, list):
+            sequence = self._remove_special(sequence, generate_unk=generate_unk)
 
-        # Remove separators, join with spaces
-        detokenized = self.SPACE.join(sequence).replace(self.separator + self.SPACE, "")
-        # Remove final merge marker.
-        if detokenized.endswith(self.separator):
-            detokenized = detokenized[:-2]
+            # Remove separators, join with spaces
+            sequence = self.SPACE.join(sequence).replace(self.separator + self.SPACE,
+                                                         "")
+            # Remove final merge marker.
+            if sequence.endswith(self.separator):
+                sequence = sequence[:-len(self.separator)]
 
         # Moses detokenizer
         if self.pretokenizer == "moses":
-            detokenized = self.moses_detokenizer.detokenize(detokenized.split())
+            sequence = self.moses_detokenizer.detokenize(sequence.split())
 
         # Remove extra spaces
         if self.normalize:
-            detokenized = remove_extra_spaces(detokenized)
+            sequence = remove_extra_spaces(sequence)
 
         # ensure the string is not empty.
-        assert detokenized is not None and len(detokenized) > 0, detokenized
-        return detokenized
+        assert sequence is not None and len(sequence) > 0, sequence
+        return sequence
 
     def set_vocab(self, itos: List[str]) -> None:
         """Set vocab"""
@@ -306,6 +320,49 @@ class SubwordNMTTokenizer(BasicTokenizer):
                 f"pretokenizer={self.pretokenizer}, "
                 f"tokenizer={self.bpe.__class__.__name__}, "
                 f"separator={self.separator}, dropout={self.dropout})")
+
+
+class FastBPETokenizer(SubwordNMTTokenizer):
+
+    def __init__(
+        self,
+        level: str = "bpe",
+        lowercase: bool = False,
+        normalize: bool = False,
+        max_length: int = -1,
+        min_length: int = -1,
+        **kwargs,
+    ):
+        try:
+            import fastBPE  # pylint: disable=import-outside-toplevel
+        except ImportError as e:
+            logger.error(e)
+            raise ImportError from e
+        super(SubwordNMTTokenizer, self).__init__(level, lowercase, normalize,
+                                                  max_length, min_length, **kwargs)
+        assert self.level == "bpe"
+
+        # set codes file path
+        self.codes: Path = Path(kwargs["codes"])
+        assert self.codes.is_file(), f"codes file {self.codes} not found."
+
+        # instantiate fastBPE object
+        self.bpe = fastBPE.fastBPE(self.codes.as_posix())
+        self.separator = "@@"
+        self.dropout = 0.0
+
+    def __call__(self, raw_input: str, is_train: bool = False) -> List[str]:
+        # fastBPE.apply()
+        tokenized = self.bpe.apply([raw_input])
+        tokenized = tokenized[0].strip().split()
+
+        # check if the input sequence length stays within the valid length range
+        if is_train and self._filter_by_length(len(tokenized)):
+            return None
+        return tokenized
+
+    def set_vocab(self, itos: List[str]) -> None:
+        pass
 
 
 class SpeechProcessor:
@@ -458,6 +515,16 @@ def _build_tokenizer(cfg: Dict) -> BasicTokenizer:
         elif tokenizer_type == "subword-nmt":
             assert "codes" in tokenizer_cfg
             tokenizer = SubwordNMTTokenizer(
+                level=cfg["level"],
+                lowercase=cfg.get("lowercase", False),
+                normalize=cfg.get("normalize", False),
+                max_length=cfg.get("max_length", -1),
+                min_length=cfg.get("min_length", -1),
+                **tokenizer_cfg,
+            )
+        elif tokenizer_type == "fastbpe":
+            assert "codes" in tokenizer_cfg
+            tokenizer = FastBPETokenizer(
                 level=cfg["level"],
                 lowercase=cfg.get("lowercase", False),
                 normalize=cfg.get("normalize", False),

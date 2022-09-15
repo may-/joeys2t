@@ -25,7 +25,6 @@ from joeynmt.loss import XentCTCLoss, XentLoss
 from joeynmt.vocabulary import Vocabulary
 
 logger = logging.getLogger(__name__)
-DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Model(nn.Module):

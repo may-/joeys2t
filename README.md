@@ -14,7 +14,7 @@ Joey S2T implements the following features:
 - CMVN, SpecAugment
 - WER evaluation
 
-Furthermore, all the functionalities in JoeyNMT v2.0 are also available from JoeyS2T:
+Furthermore, all the functionalities in JoeyNMT v2 are also available from JoeyS2T:
 - BLEU and ChrF evaluation
 - BPE tokenization (with BPE dropout option)
 - Beam search and greedy decoding (with repetition penalty, ngram blocker)
@@ -26,22 +26,20 @@ Furthermore, all the functionalities in JoeyNMT v2.0 are also available from Joe
 
 
 ## Installation
+
 JoeyS2T is built on [PyTorch](https://pytorch.org/). Please make sure you have a compatible environment.
 We tested JoeyS2T with
 - python 3.10
-- torch 1.11.0
-- cuda 11.5
+- torch 1.12.1
+- cuda 11.6
 
 Clone this repository and install via pip:
 ```bash
 $ git clone https://github.com/may-/joeys2t.git
 $ cd joeynmt
-$ pip install . -e
+$ pip install -e .
 ```
-Run the unit tests:
-```bash
-$ python -m unittest
-```
+
 
 
 ## Documentation & Tutorials
@@ -49,8 +47,9 @@ $ python -m unittest
 Please check the JoeyNMT's [documentation](https://joeynmt.readthedocs.io) first, if you are not familiar with JoeyNMT yet.
 
 For details, follow the tutorials in [notebooks](notebooks) dir.
+
 - [quick-start-with-joeynmt2](notebooks/quick-start-with-joeynmt2.ipynb)
-- [speech-to-text-with-joeynmt2](notebooks/joeyS2T_ASR_tutorial.ipynb) 
+- [speech-to-text-with-joeynmt2](notebooks/joeyS2T_ASR_tutorial.ipynb)
 
 
 
@@ -66,6 +65,4 @@ We provide [benchmarks](benchmarks_s2t.md) and pretraind models for Speech recog
 Please leave an issue if you have found a bug in the code.
 
 For general questions, email me at `ohta <at> cl.uni-heidelberg.de`.
-
-
 

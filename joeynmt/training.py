@@ -12,13 +12,14 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import List, Tuple
 
+import packaging
 import torch
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 
 from joeynmt.batch import Batch
 from joeynmt.builders import build_gradient_clipper, build_optimizer, build_scheduler
-from joeynmt.data import load_data, make_data_iter
+from joeynmt.data import load_data
 from joeynmt.helpers import (
     delete_ckpt,
     load_checkpoint,
@@ -220,27 +221,21 @@ class TrainManager:
         model_path = Path(self.model_dir) / f"{self.stats.steps}.ckpt"
         model_state_dict = (self.model.module.state_dict() if isinstance(
             self.model, torch.nn.DataParallel) else self.model.state_dict())
+        train_iter_state = self.train_iter.batch_sampler.sampler.generator.get_state() \
+            if hasattr(self.train_iter.batch_sampler.sampler, 'generator') else None
+        # yapf: disable
         state = {
-            "steps":
-            self.stats.steps,
-            "total_tokens":
-            self.stats.total_tokens,
-            "best_ckpt_score":
-            self.stats.best_ckpt_score,
-            "best_ckpt_iteration":
-            self.stats.best_ckpt_iter,
-            "model_state":
-            model_state_dict,
-            "optimizer_state":
-            self.optimizer.state_dict(),
-            "scaler_state":
-            self.scaler.state_dict(),
-            "scheduler_state":
-            (self.scheduler.state_dict() if self.scheduler is not None else None),
-            "train_iter_state":
-            self.train_iter.batch_sampler.sampler.generator.get_state(),
-            "total_correct":
-            self.stats.total_correct,
+            "steps": self.stats.steps,
+            "total_tokens": self.stats.total_tokens,
+            "best_ckpt_score": self.stats.best_ckpt_score,
+            "best_ckpt_iteration": self.stats.best_ckpt_iter,
+            "model_state": model_state_dict,
+            "optimizer_state": self.optimizer.state_dict(),
+            "scaler_state": self.scaler.state_dict(),
+            "scheduler_state": (self.scheduler.state_dict()
+                                if self.scheduler is not None else None),
+            "train_iter_state": train_iter_state,
+            "total_correct": self.stats.total_correct,
         }
         torch.save(state, model_path.as_posix())
 
@@ -373,8 +368,7 @@ class TrainManager:
         :param valid_data: validation data
         """
         # pylint: disable=too-many-branches,too-many-statements
-        self.train_iter = make_data_iter(
-            dataset=train_data,
+        self.train_iter = train_data.make_iter(
             batch_size=self.batch_size,
             batch_type=self.batch_type,
             seed=self.seed,
@@ -663,6 +657,7 @@ class TrainManager:
             n_gpu=self.n_gpu,
             normalization=self.normalization,
             cfg=self.valid_cfg,
+            fp16=self.fp16,
         )
         valid_duration = time.time() - valid_start_time
 
@@ -769,7 +764,9 @@ class TrainManager:
             logger.debug("\tTokenized hypothesis: %s", hypotheses_raw[p])
 
             # detokenized text
-            logger.info("\tSource:     %s", data.src[p])
+            detokenized_src = data.tokenizer[data.src_lang].post_process(data.src[p]) \
+                if self.task == "MT" else data.src[p]
+            logger.info("\tSource:     %s", detokenized_src)
             logger.info("\tReference:  %s", references[p])
             logger.info("\tHypothesis: %s", hypotheses[p])
 
@@ -826,11 +823,14 @@ def train(cfg_file: str, skip_test: bool = False) -> None:
         Path(cfg["training"]["model_dir"]),
         overwrite=cfg["training"].get("overwrite", False),
     )
-    joeynmt_version = make_logger(model_dir, mode="train")
+    joeynmt_version = packaging.version.parse(make_logger(model_dir, mode="train"))
     if "joeynmt_version" in cfg:
-        assert str(joeynmt_version) == str(cfg["joeynmt_version"]), (
-            f"You are using JoeyNMT version {joeynmt_version}, "
-            f'but {cfg["joeynmt_version"]} is expected in the given config.')
+        config_version = packaging.version.parse(cfg["joeynmt_version"])
+        # check if the major version number matches
+        # pylint: disable=use-maxsplit-arg
+        assert joeynmt_version.major == config_version.major, (
+            f"You are using JoeyNMT version {str(joeynmt_version)}, "
+            f'but {str(config_version)} is expected in the given config.')
     # TODO: save version number in model checkpoints
 
     # write all entries of config to the log
