@@ -92,7 +92,6 @@ class Model(nn.Module):
             self.decoder.ctc_output_layer = None
         self._loss_function = loss_function
 
-    @torch.autocast(device_type=DEVICE_TYPE)
     def forward(self,
                 return_type: str = None,
                 **kwargs) -> Tuple[Tensor, Tensor, Tensor, Tensor]:

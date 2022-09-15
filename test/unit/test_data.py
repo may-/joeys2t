@@ -117,8 +117,7 @@ class TestSpeechData(unittest.TestCase):
 
         # make train batches (filtered by length)
         train_iter = iter(
-            make_data_iter(
-                train_data,
+            train_data.make_iter(
                 batch_size=2,
                 batch_type="sentence",
                 shuffle=True,
@@ -136,8 +135,7 @@ class TestSpeechData(unittest.TestCase):
 
         # make test batches (not filtered by length)
         test_iter = iter(
-            make_data_iter(
-                test_data,
+            test_data.make_iter(
                 batch_size=2,
                 batch_type="sentence",
                 shuffle=False,

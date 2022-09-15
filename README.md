@@ -31,6 +31,7 @@ JoeyS2T is built on [PyTorch](https://pytorch.org/). Please make sure you have a
 We tested JoeyS2T with
 - python 3.10
 - torch 1.12.1
+- torchaudio 0.12.1
 - cuda 11.6
 
 Clone this repository and install via pip:

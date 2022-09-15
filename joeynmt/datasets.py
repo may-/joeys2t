@@ -162,7 +162,8 @@ class BaseDataset(Dataset):
             trg, trg_length = None, None
 
         return Batch(
-            src=torch.tensor(src).long(),
+            src=(torch.tensor(src).long()
+                 if self.task == "MT" else torch.tensor(src).float()),
             src_length=torch.tensor(src_length).long(),
             trg=torch.tensor(trg).long() if trg else None,
             trg_length=torch.tensor(trg_length).long() if trg_length else None,
@@ -170,6 +171,7 @@ class BaseDataset(Dataset):
             pad_index=pad_index,
             has_trg=self.has_trg,
             is_train=self.split == "train",
+            task=self.task,
         )
 
     def make_iter(

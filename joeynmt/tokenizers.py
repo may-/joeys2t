@@ -556,7 +556,6 @@ def build_tokenizer(data_cfg: Dict) -> Dict[str, BasicTokenizer]:
         src_lang: _build_tokenizer(data_cfg["src"]),
         trg_lang: _build_tokenizer(data_cfg["trg"]),
     }
-    log_str = "Tokenizer" if task == "MT" else "SpeechProcessor"
-    logger.info("%s %s: %s", src_lang, log_str, tokenizer[src_lang])
+    logger.info("%s Tokenizer: %s", src_lang, tokenizer[src_lang])
     logger.info("%s Tokenizer: %s", trg_lang, tokenizer[trg_lang])
     return tokenizer

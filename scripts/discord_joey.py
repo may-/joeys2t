@@ -21,7 +21,6 @@ cf.)
 - Slash Commands:
     https://guide.pycord.dev/interactions/application-commands/slash-commands
 """
-import re
 from functools import partial
 from pathlib import Path
 
@@ -39,7 +38,6 @@ from joeynmt.model import build_model
 from joeynmt.prediction import predict
 from joeynmt.tokenizers import build_tokenizer
 from joeynmt.vocabulary import build_vocab
-
 
 TOKEN = "your-bot-token-here"  # replace with your bot token
 guild = 123456789  # replace with your guild ID
