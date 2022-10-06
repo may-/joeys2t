@@ -7,11 +7,12 @@ Usage:
 
 from pathlib import Path
 import importlib
+import logging
 import tarfile
 
 import torch.hub
 
-dependencies = ['torch', 'yaml', 'numpy', 'sentencepiece', 'subword_nmt', 'sacremoses']
+dependencies = ['torch', 'yaml', 'numpy', 'matplotlib', 'sentencepiece', 'subword_nmt', 'sacremoses']
 
 # Check for required dependencies and raise a RuntimeError if any are missing.
 missing_deps = []
@@ -24,15 +25,27 @@ if len(missing_deps) > 0:
     raise RuntimeError("Missing dependencies: {}".format(", ".join(missing_deps)))
 
 
-# only do joeynmt imports after checking for dependencies
+# only do joeynmt imports after checking dependencies
 from joeynmt.hub_interface import _from_pretrained, TranslatorHubInterface
 
 ROOT_URL = "https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2"
 
+import logging
+logger = logging.getLogger(__name__)
 
-def _download_and_extract(model_name_or_path: str, ext: str = ".tar.gz") -> Path:
+
+def _download_and_extract(
+    model_name_or_path: str,
+    ext: str = ".tar.gz",
+    **kwargs
+) -> Path:
     hub_dir = Path(torch.hub.get_dir())
     download_dir = hub_dir / model_name_or_path
+    force_reload = kwargs.get('force_reload', False)
+    if (not force_reload) and download_dir.is_dir():
+        logger.info('Model cache found in %s. Skip redownload.', download_dir)
+        return download_dir
+
     torch.hub.download_url_to_file(f"{ROOT_URL}/{model_name_or_path}{ext}",
                                    download_dir.with_suffix(ext))
     # extract
@@ -51,7 +64,7 @@ def _load_from_remote(
     cfg_file: str = "config.yaml",
     **kwargs
 ) -> TranslatorHubInterface:
-    download_dir = _download_and_extract(model_name_or_path)
+    download_dir = _download_and_extract(model_name_or_path, **kwargs)
     config, test_data, model = _from_pretrained(
         model_name_or_path=download_dir,
         ckpt_file=ckpt_file,
@@ -100,6 +113,71 @@ def wmt14_deen(*args, **kwargs) -> TranslatorHubInterface:
     )
 
 
+def wmt14_deen_it_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 deen + fine-tuned on IT data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_deen_it_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_deen_koran_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 deen + fine-tuned on Koran data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_deen_koran_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_deen_law_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 deen + fine-tuned on Law data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_deen_law_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_deen_medical_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 deen + fine-tuned on Medical data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_deen_medical_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_deen_subtitles_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 deen + fine-tuned on Subtitles data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_deen_subtitles_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
 def wmt14_ende(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende
@@ -107,6 +185,71 @@ def wmt14_ende(*args, **kwargs) -> TranslatorHubInterface:
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_ende_it_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 ende + fine-tuned on IT data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_ende_it_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_ende_koran_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 ende + fine-tuned on Koran data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_ende_koran_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_ende_law_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 ende + fine-tuned on Law data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_ende_law_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_ende_medical_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 ende + fine-tuned on Medical data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_ende_medical_finetune",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def wmt14_ende_subtitles_finetune(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    WMT14 ende + fine-tuned on Subtitles data
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="wmt14_ende_subtitles_finetune",
         ckpt_file="avg5.ckpt",
         cfg_file="config.yaml",
         **kwargs
@@ -125,6 +268,31 @@ def local(model_name_or_path, ckpt_file, cfg_file, **kwargs) -> TranslatorHubInt
     )
     return TranslatorHubInterface(config, test_data, model)
 
+
+def jparacrawl_enja(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    JParaCrawl enja
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="jparacrawl_enja",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config_v2.yaml",
+        **kwargs
+    )
+
+
+def jparacrawl_jaen(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    JParaCrawl jaen
+    See
+    """
+    return _load_from_remote(
+        model_name_or_path="jparacrawl_enja",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config_v2.yaml",
+        **kwargs
+    )
 
 if __name__ == '__main__':
     translator = transformer_iwslt14_deen_bpe()
