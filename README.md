@@ -61,6 +61,21 @@ We provide [benchmarks](benchmarks_s2t.md) and pretraind models for Speech recog
 - [ASR on LibriSpeech](benchmarks_s2t.md#librispeech)
 - [ST on MuST-C en-de](benchmarks_s2t.md#must-c-v2-en-de)
 
+## Reference
+If you use JoeyS2T in a publication or thesis, please cite the following [paper](https://arxiv.org/abs/2210.02545):
+
+```
+@inproceedings{ohta-etal-2022-joeys2t,
+    title = "{JoeyS2T}: Minimalistic Speech-to-Text Modeling with {JoeyNMT}",
+    author = "Ohta, Mayumi and Kreutzer, Julia and Riezler, Stefan",
+    booktitle = "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing (EMNLP): System Demonstrations",
+    month = "December",
+    year = "2022",
+    address = "Abu Dhabi, United Arab Emirates",
+    publisher = "Association for Computational Linguistics",
+    url = "https://arxiv.org/abs/2210.02545",
+}
+```
 
 ## Contact
 Please leave an issue if you have found a bug in the code.
