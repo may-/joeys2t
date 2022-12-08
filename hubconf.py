@@ -12,7 +12,8 @@ import tarfile
 
 import torch.hub
 
-dependencies = ['torch', 'yaml', 'numpy', 'matplotlib', 'sentencepiece', 'subword_nmt', 'sacremoses']
+dependencies = ['torch', 'torchaudio', 'yaml', 'numpy', 'matplotlib', 'pandas',
+                'sentencepiece', 'subword_nmt', 'sacremoses', 'editdistance']
 
 # Check for required dependencies and raise a RuntimeError if any are missing.
 missing_deps = []
@@ -103,7 +104,7 @@ def rnn_iwslt14_deen_bpe(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_deen(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 deen
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/wmt14/wmt14.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_deen",
@@ -116,7 +117,7 @@ def wmt14_deen(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_deen_it_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 deen + fine-tuned on IT data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_deen_it_finetune",
@@ -129,7 +130,7 @@ def wmt14_deen_it_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_deen_koran_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 deen + fine-tuned on Koran data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_deen_koran_finetune",
@@ -142,7 +143,7 @@ def wmt14_deen_koran_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_deen_law_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 deen + fine-tuned on Law data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_deen_law_finetune",
@@ -155,7 +156,7 @@ def wmt14_deen_law_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_deen_medical_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 deen + fine-tuned on Medical data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_deen_medical_finetune",
@@ -168,7 +169,7 @@ def wmt14_deen_medical_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_deen_subtitles_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 deen + fine-tuned on Subtitles data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_deen_subtitles_finetune",
@@ -181,7 +182,7 @@ def wmt14_deen_subtitles_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_ende(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/wmt14/wmt14.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende",
@@ -194,7 +195,7 @@ def wmt14_ende(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_ende_it_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende + fine-tuned on IT data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende_it_finetune",
@@ -207,7 +208,7 @@ def wmt14_ende_it_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_ende_koran_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende + fine-tuned on Koran data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende_koran_finetune",
@@ -220,7 +221,7 @@ def wmt14_ende_koran_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_ende_law_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende + fine-tuned on Law data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende_law_finetune",
@@ -233,7 +234,7 @@ def wmt14_ende_law_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_ende_medical_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende + fine-tuned on Medical data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende_medical_finetune",
@@ -246,11 +247,76 @@ def wmt14_ende_medical_finetune(*args, **kwargs) -> TranslatorHubInterface:
 def wmt14_ende_subtitles_finetune(*args, **kwargs) -> TranslatorHubInterface:
     """
     WMT14 ende + fine-tuned on Subtitles data
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/damt/damt.py
     """
     return _load_from_remote(
         model_name_or_path="wmt14_ende_subtitles_finetune",
         ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def librispeech_960h_en_asr(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English ASR model trained on Librispeech 960h data
+    See: https://github.com/may-/datasets/blob/main/datasets/librispeech_asr/librispeech_asr.py
+    """
+    return _load_from_remote(
+        model_name_or_path="librispeech960h",
+        ckpt_file="avg10.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def librispeech_100h_en_asr(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English ASR model trained on Librispeech 100h data
+    See: https://github.com/may-/datasets/blob/main/datasets/librispeech_asr/librispeech_asr.py
+    """
+    return _load_from_remote(
+        model_name_or_path="librispeech100h",
+        ckpt_file="avg10.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def mustc_v2_ende_asr(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English ASR model trained on MuST-C v2 data
+    See: https://github.com/may-/datasets/blob/main/datasets/mustc/mustc.py
+    """
+    return _load_from_remote(
+        model_name_or_path="mustc_asr",
+        ckpt_file="avg10.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def mustc_v2_ende_mt(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English-German MT model trained on MuST-C v2 data
+    See: https://github.com/may-/datasets/blob/main/datasets/mustc/mustc.py
+    """
+    return _load_from_remote(
+        model_name_or_path="mustc_mt",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def mustc_v2_ende_st(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English-German ST model trained on MuST-C v2 data
+    See: https://github.com/may-/datasets/blob/main/datasets/mustc/mustc.py
+    """
+    return _load_from_remote(
+        model_name_or_path="mustc_mt",
+        ckpt_file="avg10.ckpt",
         cfg_file="config.yaml",
         **kwargs
     )
@@ -272,7 +338,7 @@ def local(model_name_or_path, ckpt_file, cfg_file, **kwargs) -> TranslatorHubInt
 def jparacrawl_enja(*args, **kwargs) -> TranslatorHubInterface:
     """
     JParaCrawl enja
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/jparacrawl/jparacrawl.py
     """
     return _load_from_remote(
         model_name_or_path="jparacrawl_enja",
@@ -285,7 +351,7 @@ def jparacrawl_enja(*args, **kwargs) -> TranslatorHubInterface:
 def jparacrawl_jaen(*args, **kwargs) -> TranslatorHubInterface:
     """
     JParaCrawl jaen
-    See
+    See: https://github.com/may-/datasets/blob/main/datasets/jparacrawl/jparacrawl.py
     """
     return _load_from_remote(
         model_name_or_path="jparacrawl_enja",

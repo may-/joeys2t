@@ -219,7 +219,7 @@ class Model(nn.Module):
             - hidden_concat
             - src_mask
         """
-        assert _kwargs["task"] == self.task  # check batch type
+        assert _kwargs["task"] == self.task, (_kwargs["task"], self.task)  # batch type
         return self.encoder(self.src_embed(src), src_length, src_mask, **_kwargs)
 
     def _decode(

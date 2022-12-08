@@ -11,13 +11,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from joeynmt.constants import EOS_TOKEN
-from joeynmt.datasets import build_dataset, BaseDataset, StreamDataset
+from joeynmt.datasets import build_dataset, BaseDataset
 from joeynmt.helpers import (
     load_checkpoint,
     load_config,
     parse_train_args,
     resolve_ckpt_path,
 )
+from joeynmt.helpers_for_audio import pad_features
 from joeynmt.model import build_model, Model
 from joeynmt.prediction import predict
 from joeynmt.tokenizers import build_tokenizer
@@ -68,15 +69,23 @@ def _from_pretrained(
     cfg = load_config(cfg_file)
     cfg.update(kwargs)
 
+    task = cfg["data"].get("task", "MT")
+    assert task in ["MT", "S2T"], "`task` must be either `MT` or `S2T`."
+
     # rewrite paths in cfg
     for side in ["src", "trg"]:
-        cfg["data"][side]["voc_file"] = _check_file_path(cfg["data"][side]["voc_file"],
-                                                         model_dir).as_posix()
-        if "tokenizer_cfg" in cfg["data"][side]:
-            for tok_model in ["codes", "model_file"]:
-                if tok_model in cfg["data"][side]["tokenizer_cfg"]:
-                    cfg["data"][side]["tokenizer_cfg"][tok_model] = _check_file_path(
-                        cfg["data"][side]["tokenizer_cfg"][tok_model], model_dir).as_posix()
+        if task == "S2T" and side == "src":
+            assert cfg["data"]["dataset_type"] == "speech"
+            assert cfg["data"][side]["tokenizer_type"] == "speech"
+        else:
+            data_side = cfg["data"][side]
+            data_side["voc_file"] = _check_file_path(data_side["voc_file"],
+                                                     model_dir).as_posix()
+            if "tokenizer_cfg" in data_side:
+                for tok_model in ["codes", "model_file"]:
+                    if tok_model in data_side["tokenizer_cfg"]:
+                        data_side["tokenizer_cfg"][tok_model] = _check_file_path(
+                            data_side["tokenizer_cfg"][tok_model], model_dir).as_posix()
 
     if "load_model" in cfg["training"]:
         cfg["training"]["load_model"] = _check_file_path(cfg["training"]["load_model"],
@@ -112,18 +121,25 @@ def _from_pretrained(
     src_lang = cfg["data"]["src"]["lang"]
     trg_lang = cfg["data"]["trg"]["lang"]
     tokenizer = build_tokenizer(cfg["data"])
-    sequence_encoder = {
-        src_lang: partial(src_vocab.sentences_to_ids, bos=False, eos=True),
-        trg_lang: partial(trg_vocab.sentences_to_ids, bos=True, eos=True),
-    }
+    if task == "MT":
+        sequence_encoder = {
+            src_lang: partial(src_vocab.sentences_to_ids, bos=False, eos=True),
+            trg_lang: partial(trg_vocab.sentences_to_ids, bos=True, eos=True),
+        }
+    elif task == "S2T":
+        sequence_encoder = {
+            "src": partial(pad_features, embed_size=tokenizer["src"].num_freq),
+            "trg": partial(trg_vocab.sentences_to_ids, bos=True, eos=True),
+        }
     test_data = build_dataset(
-        dataset_type="stream",
+        dataset_type="stream" if task == "MT" else "speech_stream",
         path=None,
-        src_lang=src_lang,
-        trg_lang=trg_lang,
+        src_lang=src_lang if task == "MT" else "src",
+        trg_lang=trg_lang if task == "MT" else "trg",
         split="test",
         tokenizer=tokenizer,
         sequence_encoder=sequence_encoder,
+        task=task,
     )
 
     config = {
@@ -189,7 +205,7 @@ class TranslatorHubInterface(nn.Module):
                 out, scores
         return out
         
-    def translate(self, src: List[str], **kwargs) -> List[str]:
+    def generate(self, src: List[str], **kwargs) -> List[str]:
         assert isinstance(src, list), "Please provide a list of sentences!"
         assert len(src) <= 64, "for big dataset, please use `test` function instead of `translate`!"
         kwargs["return_prob"] = "none"
@@ -204,11 +220,11 @@ class TranslatorHubInterface(nn.Module):
         test_cfg = self.cfg['testing'].copy()
         test_cfg.update(kwargs)
 
-        assert self.dataset.__class__.__name__ == "StreamDataset", self.dataset
+        assert self.dataset.__class__.__name__ in ["StreamDataset", "SpeechStreamDataset"], self.dataset
         test_cfg["batch_type"] = "sentence"
         test_cfg["batch_size"] = len(src)
 
-        self.dataset.cache = {}  # reset cache
+        self.dataset.reset_cache()  # reset cache
         if trg is not None:
             assert len(src) == len(trg), "src and trg must have the same length!"
             self.dataset.has_trg = True
@@ -238,18 +254,18 @@ class TranslatorHubInterface(nn.Module):
         if translations:
             assert len(src) * test_cfg.get("n_best", 1) == len(translations)
 
-        self.dataset.cache = {}  # reset cache
+        self.dataset.reset_cache()  # reset cache
 
         return scores, translations, tokens, probs, attention_probs, test_cfg
 
     def plot_attention(self, src: str, trg: str, attention_scores: np.ndarray) -> None:
         # preprocess and tokenize sentences
-        self.dataset.cache = {}  # reset cache
+        self.dataset.reset_cache()  # reset cache
         self.dataset.has_trg = True
         self.dataset.set_item(src, trg)
         src_tokens = self.dataset.get_item(idx=0, lang=self.dataset.src_lang, is_train=False)
         trg_tokens = self.dataset.get_item(idx=0, lang=self.dataset.trg_lang, is_train=False)
-        self.dataset.cache = {}  # reset cache
+        self.dataset.reset_cache()  # reset cache
         
         # plot attention scores
         fig = plot_heatmap(

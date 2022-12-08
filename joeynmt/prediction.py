@@ -550,13 +550,14 @@ def translate(
             "trg": None,
         }
     test_data = build_dataset(
-        dataset_type="stream",
+        dataset_type="stream" if task == "MT" else "speech_stream",
         path=None,
         src_lang=src_cfg["lang"] if task == "MT" else "src",
         trg_lang=trg_cfg["lang"] if task == "MT" else "trg",
         split="test",
         tokenizer=tokenizer,
         sequence_encoder=sequence_encoder,
+        task=task,
     )
 
     # set the random seed
@@ -627,7 +628,7 @@ def translate(
                             print(f"\ttokens: {token}\n\tscores: {score}")
 
                 # reset cache
-                test_data.cache = {}
+                test_data.reset_cache()
 
             except (KeyboardInterrupt, EOFError):
                 print("\nBye.")

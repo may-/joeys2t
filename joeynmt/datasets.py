@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Union
 
+import pandas as pd
 import torch
 
 from torch.utils.data import (
@@ -482,7 +483,7 @@ class SpeechDataset(TsvDataset):
         tokenizer: Dict[str, Union[BasicTokenizer, SpeechProcessor]] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
-        task: str = "MT",
+        task: str = "S2T",
         **kwargs,
     ):
         super().__init__(
@@ -593,7 +594,8 @@ class StreamDataset(BaseDataset):
         """
         Set input text to the cache.
 
-        :param line: (str)
+        :param src_line: (str)
+        :param trg_line: (str)
         """
         assert isinstance(src_line, str) and src_line.strip() != "", \
             "The input sentence is empty! Please make sure " \
@@ -603,7 +605,7 @@ class StreamDataset(BaseDataset):
         src_line = self.tokenizer[self.src_lang].pre_process(src_line)
 
         if self.has_trg:
-            trg_line = self.tokenizer[self.trg_lang].pre_process(src_line)
+            trg_line = self.tokenizer[self.trg_lang].pre_process(trg_line)
         self.cache[idx] = (src_line, trg_line)
 
     def get_item(self, idx: int, lang: str, is_train: bool = None) -> List[str]:
@@ -621,6 +623,9 @@ class StreamDataset(BaseDataset):
         item = self.tokenizer[lang](line[lang], is_train=False)
         return item
 
+    def reset_cache(self) -> None:
+        self.cache = {}
+
     def __len__(self) -> int:
         return len(self.cache)
 
@@ -628,6 +633,76 @@ class StreamDataset(BaseDataset):
         return (f"{self.__class__.__name__}(split={self.split}, len={len(self.cache)}, "
                 f"src_lang={self.src_lang}, trg_lang={self.trg_lang}, "
                 f"has_trg={self.has_trg}, random_subset={self.random_subset})")
+
+
+class SpeechStreamDataset(SpeechDataset):
+    """
+    SpeechStreamDataset which interacts with audio file inputs.
+    - called by `translate()` func in `prediction.py`.
+    """
+
+    def __init__(
+        self,
+        path: str,
+        src_lang: str = "src",
+        trg_lang: str = "trg",
+        split: int = "test",
+        has_trg: bool = False,
+        tokenizer: Dict[str, BasicTokenizer] = None,
+        sequence_encoder: Dict[str, Callable] = None,
+        random_subset: int = -1,
+        task: str = "S2T",
+        **kwargs,
+    ):
+        # pylint: disable=unused-argument
+        super(TsvDataset, self).__init__(
+            path=path,
+            src_lang=src_lang,
+            trg_lang=trg_lang,
+            split=split,
+            has_trg=has_trg,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=random_subset,
+            task=task,
+        )
+
+        # place holder (empty dataframe)
+        try:
+            import pandas as pd  # pylint: disable=import-outside-toplevel
+            self.df = pd.DataFrame({'id' : [], 'src': [], 'n_frames': []})
+
+            assert isinstance(self.tokenizer["src"], SpeechProcessor)
+            self.tokenizer["src"].root_path = Path("")
+
+        except ImportError as e:
+            logger.error(e)
+            raise ImportError from e
+
+    def set_item(self, src_line: str, trg_line: str = None) -> None:
+        """
+        Set input text to the cache.
+
+        :param src_line: (str) absolute path to an audio file
+        :param trg_line: (str)
+        """
+        assert isinstance(src_line, str) and src_line.strip() != "", \
+            "The input sentence is empty! Please make sure " \
+            "that you are feeding a valid input."
+
+        assert (Path(self.tokenizer["src"].root_path) / src_line).is_file(), \
+            f"{src_line} not found. Please provide the abosolute path to a file!"
+
+        min_length = int(self.tokenizer["src"].min_length) # minimum length
+        row = {"id": str(len(self.df)), "src": src_line, "n_frames": min_length}
+
+        if trg_line:
+            row["trg"] = self.tokenizer[self.trg_lang].pre_process(trg_line)
+
+        self.df = self.df.append(row, ignore_index=True)
+
+    def reset_cache(self) -> None:
+        self.df = pd.DataFrame({'id' : [], 'src': [], 'n_frames': []})
 
 
 class BaseHuggingfaceDataset(BaseDataset):
@@ -864,6 +939,19 @@ def build_dataset(
             path=path,
             src_lang=src_lang,
             trg_lang=trg_lang,
+            split="test",
+            has_trg=False,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=-1,
+            task=task,
+            **kwargs,
+        )
+    elif dataset_type == "speech_stream":
+        dataset = SpeechStreamDataset(
+            path=None,
+            src_lang="src",
+            trg_lang="trg",
             split="test",
             has_trg=False,
             tokenizer=tokenizer,
