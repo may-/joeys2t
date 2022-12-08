@@ -19,6 +19,7 @@ from torch.utils.data import Dataset
 from joeynmt.data import load_data
 from joeynmt.datasets import StreamDataset, build_dataset
 from joeynmt.helpers import (
+    check_version,
     expand_reverse_index,
     load_checkpoint,
     load_config,
@@ -135,7 +136,7 @@ def predict(
     total_ntokens = 0
     total_n_correct = 0
     output, ref_scores, hyp_scores, attention_scores = None, None, None, None
-    disable_tqdm = isinstance(data, StreamDataset)
+    disable_tqdm = data.__class__.__name__ == "StreamDataset"
 
     gen_start_time = time.time()
     with tqdm(total=len(data), disable=disable_tqdm, desc="Predicting...") as pbar:
@@ -153,13 +154,17 @@ def predict(
 
                 # don't track gradients during validation
                 with torch.no_grad():
-                    batch_loss, log_probs, _, n_correct = model(return_type="loss",
-                                                                **vars(batch))
+                    batch_loss, log_probs, attn, n_correct = model(
+                        return_type="loss",
+                        return_attention=return_attention,
+                        **vars(batch)
+                    )
                     # sum over multiple gpus
                     batch_loss = batch.normalize(batch_loss, "sum", n_gpu=n_gpu)
                     n_correct = batch.normalize(n_correct, "sum", n_gpu=n_gpu)
                     if return_prob == "ref":
                         ref_scores = batch.score(log_probs)
+                        attention_scores = attn.detach().cpu().numpy()
                         output = batch.trg
 
                 total_loss += batch_loss.item()  # cast Tensor to float
@@ -238,7 +243,14 @@ def predict(
             ]),
             gen_duration,
         )
-        return valid_scores, None, None, decoded_valid, valid_sequence_scores, None
+        return (
+            valid_scores,
+            None,  # valid_ref
+            None,  # valid_hyp
+            decoded_valid,
+            valid_sequence_scores,
+            valid_attention_scores,
+        )
 
     # retrieve detokenized hypotheses and references
     valid_hyp = [
@@ -343,7 +355,9 @@ def test(
     ) = parse_train_args(cfg["training"], mode="prediction")
 
     if len(logger.handlers) == 0:
-        _ = make_logger(model_dir, mode="test")  # version string returned
+        pkg_version = make_logger(model_dir, mode="test")  # version string returned
+        if "joeynmt_version" in cfg:
+            check_version(pkg_version, cfg["joeynmt_version"])
 
     # load the data
     if datasets is None:
@@ -383,7 +397,8 @@ def test(
             )
 
     # when checkpoint is not specified, take latest (best) from model dir
-    ckpt = resolve_ckpt_path(ckpt, load_model, model_dir)
+    load_model = load_model if ckpt is None else Path(ckpt)
+    ckpt = resolve_ckpt_path(load_model, model_dir)
 
     # load model checkpoint
     model_checkpoint = load_checkpoint(ckpt, device=device)
@@ -502,11 +517,13 @@ def translate(
     trg_cfg = cfg["data"]["trg"]
     task = cfg["data"].get("task", "MT").upper()
 
-    _ = make_logger(model_dir, mode="translate")
-    # version string returned
+    pkg_version = make_logger(model_dir, mode="translate")  # version string returned
+    if "joeynmt_version" in cfg:
+        check_version(pkg_version, cfg["joeynmt_version"])
 
     # when checkpoint is not specified, take latest (best) from model dir
-    ckpt = resolve_ckpt_path(ckpt, load_model, model_dir)
+    load_model = load_model if ckpt is None else Path(ckpt)
+    ckpt = resolve_ckpt_path(load_model, model_dir)
 
     # read vocabs
     src_vocab, trg_vocab = build_vocab(cfg["data"], model_dir=model_dir)
