@@ -5,6 +5,11 @@
 
 JoeyS2T is an extention of [JoeyNMT](https://github.com/joeynmt/joeynmt) for Speech-to-Text tasks.
 
+
+## What's new
+- Our paper has been accepted at [EMNLP 2022](https://2022.emnlp.org/) System Demo Track!
+
+
 ## Features
 Joey S2T implements the following features:
 - Transformer Encoder-Decoder
