@@ -10,7 +10,6 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 
 import pandas as pd
 import torch
-
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -222,8 +221,6 @@ class BaseDataset(Dataset):
         assert self.sequence_encoder[self.src_lang] is not None
         if self.has_trg:
             assert self.sequence_encoder[self.trg_lang] is not None
-        #else:
-        #    self.sequence_encoder[self.trg_lang] = None
 
         # data iterator
         return DataLoader(
@@ -401,7 +398,8 @@ class TsvDataset(BaseDataset):
 
         # read tsv data
         try:
-            import pandas as pd  # pylint: disable=import-outside-toplevel
+            # pylint: disable=import-outside-toplevel,redefined-outer-name,reimported
+            import pandas as pd
 
             df = pd.read_csv(
                 file_path.as_posix(),
@@ -514,7 +512,8 @@ class SpeechDataset(TsvDataset):
 
         # read tsv data
         try:
-            import pandas as pd  # pylint: disable=import-outside-toplevel
+            # pylint: disable=import-outside-toplevel,redefined-outer-name,reimported
+            import pandas as pd
 
             # TODO: use `chunksize` for online data loading.
             dtype = {'id': str, 'src': str, 'trg': str, 'n_frames': int}
@@ -669,8 +668,9 @@ class SpeechStreamDataset(SpeechDataset):
 
         # place holder (empty dataframe)
         try:
-            import pandas as pd  # pylint: disable=import-outside-toplevel
-            self.df = pd.DataFrame({'id' : [], 'src': [], 'n_frames': []})
+            # pylint: disable=import-outside-toplevel,redefined-outer-name,reimported
+            import pandas as pd
+            self.df = pd.DataFrame({'id': [], 'src': [], 'n_frames': []})
 
             assert isinstance(self.tokenizer["src"], SpeechProcessor)
             self.tokenizer["src"].root_path = Path("")
@@ -693,16 +693,17 @@ class SpeechStreamDataset(SpeechDataset):
         assert (Path(self.tokenizer["src"].root_path) / src_line).is_file(), \
             f"{src_line} not found. Please provide the abosolute path to a file!"
 
-        min_length = int(self.tokenizer["src"].min_length) # minimum length
+        min_length = int(self.tokenizer["src"].min_length)  # minimum length
         row = {"id": str(len(self.df)), "src": src_line, "n_frames": min_length}
 
         if trg_line:
             row["trg"] = self.tokenizer[self.trg_lang].pre_process(trg_line)
 
-        self.df = self.df.append(row, ignore_index=True)
+        row_df = pd.DataFrame.from_records([row])
+        self.df = pd.concat([self.df, row_df], ignore_index=True)
 
     def reset_cache(self) -> None:
-        self.df = pd.DataFrame({'id' : [], 'src': [], 'n_frames': []})
+        self.df = pd.DataFrame({'id': [], 'src': [], 'n_frames': []})
 
 
 class BaseHuggingfaceDataset(BaseDataset):

@@ -283,7 +283,7 @@ def librispeech_100h_en_asr(*args, **kwargs) -> TranslatorHubInterface:
     )
 
 
-def mustc_v2_ende_asr(*args, **kwargs) -> TranslatorHubInterface:
+def mustc_v2_en_asr(*args, **kwargs) -> TranslatorHubInterface:
     """
     English ASR model trained on MuST-C v2 data
     See: https://github.com/may-/datasets/blob/main/datasets/mustc/mustc.py
@@ -315,7 +315,7 @@ def mustc_v2_ende_st(*args, **kwargs) -> TranslatorHubInterface:
     See: https://github.com/may-/datasets/blob/main/datasets/mustc/mustc.py
     """
     return _load_from_remote(
-        model_name_or_path="mustc_mt",
+        model_name_or_path="mustc_st",
         ckpt_file="avg10.ckpt",
         cfg_file="config.yaml",
         **kwargs

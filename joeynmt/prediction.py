@@ -11,13 +11,13 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from tqdm import tqdm
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from joeynmt.data import load_data
-from joeynmt.datasets import StreamDataset, build_dataset
+from joeynmt.datasets import build_dataset
 from joeynmt.helpers import (
     check_version,
     expand_reverse_index,
@@ -157,8 +157,7 @@ def predict(
                     batch_loss, log_probs, attn, n_correct = model(
                         return_type="loss",
                         return_attention=return_attention,
-                        **vars(batch)
-                    )
+                        **vars(batch))
                     # sum over multiple gpus
                     batch_loss = batch.normalize(batch_loss, "sum", n_gpu=n_gpu)
                     n_correct = batch.normalize(n_correct, "sum", n_gpu=n_gpu)

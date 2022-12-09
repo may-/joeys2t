@@ -23,9 +23,8 @@ cf.)
 """
 
 import discord
-from discord import SlashCommandGroup, option
-
 import torch
+from discord import SlashCommandGroup, option  # pylint:disable=no-name-in-module
 
 TOKEN = "your-bot-token-here"  # replace with your bot token
 guild = 123456789  # replace with your guild ID

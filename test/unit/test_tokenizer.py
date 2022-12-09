@@ -7,10 +7,10 @@ import sentencepiece as spm
 from joeynmt.data import load_data
 from joeynmt.tokenizers import (
     BasicTokenizer,
+    FastBPETokenizer,
     SentencePieceTokenizer,
     SpeechProcessor,
     SubwordNMTTokenizer,
-    FastBPETokenizer,
 )
 
 

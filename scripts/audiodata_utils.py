@@ -16,7 +16,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import sentencepiece as sp
-
 from tqdm import tqdm
 
 from joeynmt.constants import (
@@ -174,8 +173,8 @@ class Normalizer:
                  escape: bool = True):
         try:
             # pylint: disable=import-outside-toplevel,unused-import
-            from sacremoses.normalize import MosesPunctNormalizer
             from normalize_japanese import normalize as normalize_ja  # noqa: F401
+            from sacremoses.normalize import MosesPunctNormalizer
         except ImportError as e:
             raise ImportError from e
 

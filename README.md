@@ -66,6 +66,21 @@ We provide [benchmarks](benchmarks_s2t.md) and pretraind models for Speech recog
 - [ASR on LibriSpeech](benchmarks_s2t.md#librispeech)
 - [ST on MuST-C en-de](benchmarks_s2t.md#must-c-v2-en-de)
 
+
+Models are also available via Torch Hub!
+```python
+import torch
+
+model = torch.hub.load('may-/joeys2t', 'mustc_v2_ende_st')
+translations = model.generate(['test.wav'])
+print(translations[0])
+# 'Hallo, '
+```
+> :warning: **Attention**
+> The 1d-conv layer may raise an error for too short audio inputs.
+> (We cannot convolve the frames shorter than the kernel size!)
+
+
 ## Reference
 If you use JoeyS2T in a publication or thesis, please cite the following [paper](https://arxiv.org/abs/2210.02545):
 
