@@ -42,7 +42,7 @@ We tested JoeyS2T with
 Clone this repository and install via pip:
 ```bash
 $ git clone https://github.com/may-/joeys2t.git
-$ cd joeynmt
+$ cd joeys2t
 $ pip install -e .
 ```
 
