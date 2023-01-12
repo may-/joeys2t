@@ -3,16 +3,11 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## What's new
+- 12th January 2023: upgraded to JoeyNMT v2.2.0
+
+- 26th December 2022:  [＠IT](https://atmarkit.itmedia.co.jp) にて、 [「Python＋Pytorch」と「JoeyNMT」で学ぶニューラル機械翻訳](https://atmarkit.itmedia.co.jp/ait/articles/2212/26/news016.html) の記事が電子書籍化されました。
+
 - 4th September 2022: upgraded to JoeyNMT v2.1.0
-
-- 17th Augst 2022: [Joey S2T Hands-on Tutorial](https://github.com/may-/joeys2t/blob/main/notebooks/joeyS2T_ASR_tutorial.ipynb)  
-  [＠IT](https://atmarkit.itmedia.co.jp) にて、 [「Python＋Pytorch」と「JoeyNMT」で学ぶニューラル機械翻訳 第三回](https://atmarkit.itmedia.co.jp/ait/articles/2208/17/news002.html) の記事が公開されました。
-
-- 21st July 2022: [Joey NMT v2.0 Hands-on Tutorial](notebooks/tokenizer_tutorial_ja.ipynb) (in Japanese)  
-  [＠IT](https://atmarkit.itmedia.co.jp) にて、 [「Python＋Pytorch」と「JoeyNMT」で学ぶニューラル機械翻訳 第二回](https://atmarkit.itmedia.co.jp/ait/articles/2207/21/news006.html) の記事が公開されました。
-
-- 29th June 2022: [Joey NMT v2.0 Hands-on Tutorial](notebooks/fine_tuning_tutorial_enja.ipynb) (in Japanese)  
-  [＠IT](https://atmarkit.itmedia.co.jp) にて、 [「Python＋Pytorch」と「JoeyNMT」で学ぶニューラル機械翻訳 第一回](https://atmarkit.itmedia.co.jp/ait/articles/2206/29/news008.html) の記事が公開されました。
 
 
 ## Goal and Purpose
@@ -56,17 +51,17 @@ Joey NMT implements the following features (aka the minimalist toolkit of NMT :w
 
 ## Installation
 Joey NMT is built on [PyTorch](https://pytorch.org/). Please make sure you have a compatible environment.
-We tested Joey NMT v2.1 with
+We tested Joey NMT v2.2 with
 - python 3.10
-- torch 1.12.1
+- torch 1.13.1
 - cuda 11.6
 
 > :warning: **Warning**
 > When running on **GPU** you need to manually install the suitable PyTorch version 
 > for your [CUDA](https://developer.nvidia.com/cuda-zone) version.
-> For example, you can install PyTorch 1.12.1 with CUDA v11.6 as follows:
+> For example, you can install PyTorch 1.13.1 with CUDA v11.6 as follows:
 > ```
-> $ pip install --upgrade torch==1.12.1 --extra-index-url https://download.pytorch.org/whl/cu116
+> $ pip install --upgrade torch==1.13.1 --extra-index-url https://download.pytorch.org/whl/cu116
 > ```
 > See [PyTorch installation instructions](https://pytorch.org/get-started/locally/).
 
@@ -96,6 +91,13 @@ $ pip install joeynmt
 
 
 ## Change logs
+### v2.2
+- compatibility with torch 1.13 tested
+- torchhub introduced
+- bugfixes, minor refactoring
+
+<details><summary>previous releases</summary>
+
 ### v2.1
 - upgrade to python 3.10, torch 1.12
 - replace Automated Mixed Precision from NVIDA's amp to Pytorch's amp package
@@ -105,7 +107,6 @@ $ pip install joeynmt
 - add tokenizer tutorial
 - minor bugfixes
 
-<details><summary>previous releases</summary>
 
 ### v2.0 *Breaking change!*
 - upgrade to python 3.9, torch 1.11
