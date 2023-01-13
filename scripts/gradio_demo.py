@@ -67,10 +67,14 @@ def recognize(model_choice, speech):
 
 select = gr.Dropdown(model_names)
 mic = gr.Audio(source="microphone", type="numpy", label="Speak here...")
-demo = gr.Interface(recognize, [select, mic],
-                    "text",
+demo = gr.Interface(fn=recognize,
+                    inputs=[select, mic],
+                    outputs="text",
                     allow_flagging="auto",
                     title=title,
                     description=description,
-                    article=article)
+                    article=article,
+                    server_name="0.0.0.0",
+                    ssl_certfile="/path/to/cert.pem",
+                    ssl_keyfile="/path/to/key.pem")
 demo.launch()

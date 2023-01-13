@@ -7,6 +7,7 @@ JoeyS2T is an extention of [JoeyNMT](https://github.com/joeynmt/joeynmt) for Spe
 
 
 ## What's new
+- Upgraded to JoeyNMT v2.2.
 - Our paper has been accepted at [EMNLP 2022](https://2022.emnlp.org/) System Demo Track!
 
 
@@ -35,18 +36,17 @@ Furthermore, all the functionalities in JoeyNMT v2 are also available from JoeyS
 JoeyS2T is built on [PyTorch](https://pytorch.org/). Please make sure you have a compatible environment.
 We tested JoeyS2T with
 - python 3.10
-- torch 1.12.1
-- torchaudio 0.12.1
+- torch 1.13.1
+- torchaudio 0.13.1
 - cuda 11.6
 
 Clone this repository and install via pip:
+
 ```bash
 $ git clone https://github.com/may-/joeys2t.git
 $ cd joeys2t
 $ pip install -e .
 ```
-
-
 
 ## Documentation & Tutorials
 
@@ -74,7 +74,7 @@ import torch
 model = torch.hub.load('may-/joeys2t', 'mustc_v2_ende_st')
 translations = model.generate(['test.wav'])
 print(translations[0])
-# 'Hallo, '
+# 'Hallo, world!'
 ```
 > :warning: **Attention**
 > The 1d-conv layer may raise an error for too short audio inputs.
@@ -91,7 +91,7 @@ If you use JoeyS2T in a publication or thesis, please cite the following [paper]
     booktitle = "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing (EMNLP): System Demonstrations",
     month = "December",
     year = "2022",
-    address = "Abu Dhabi, United Arab Emirates",
+    address = "Abu Dhabi, UAE",
     publisher = "Association for Computational Linguistics",
     url = "https://arxiv.org/abs/2210.02545",
 }

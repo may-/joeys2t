@@ -268,7 +268,6 @@ class TranslatorHubInterface(nn.Module):
         )
         if translations:
             assert len(src) * test_cfg.get("n_best", 1) == len(translations)
-
         self.dataset.reset_cache()  # reset cache
 
         return scores, translations, tokens, probs, attention_probs, test_cfg
