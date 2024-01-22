@@ -1,7 +1,14 @@
 # &nbsp; ![Joey-NMT](joey2-small.png) Joey NMT
-[![build](https://github.com/joeynmt/joeynmt/actions/workflows/main.yml/badge.svg)](https://github.com/joeynmt/joeynmt/actions/workflows/main.yml)
+[![build](https://github.com/may-/joeynmt/actions/workflows/main.yml/badge.svg)](https://github.com/may-/joeynmt/actions/workflows/main.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![arXiv](https://img.shields.io/badge/arXiv-1907.12484-b31b1b.svg)](https://arxiv.org/abs/1907.12484)
+
+
+## What's new
+- 18th January 2024: upgraded to JoeyNMT v2.3.0
+- 12th January 2023: upgraded to JoeyNMT v2.2.0
+- 26th December 2022:  [＠IT](https://atmarkit.itmedia.co.jp) にて、 [「Python＋Pytorch」と「JoeyNMT」で学ぶニューラル機械翻訳](https://atmarkit.itmedia.co.jp/ait/articles/2212/26/news016.html) の記事が電子書籍化されました。
+- 4th September 2022: upgraded to JoeyNMT v2.1.0
 
 
 ## Goal and Purpose
@@ -150,189 +157,39 @@ python -m unittest  # Run the unit tests
 </details>
 
 
-## Documentation & Tutorials
-We also updated the [documentation](https://joeynmt.readthedocs.io) thoroughly for Joey NMT 2.0!
+## Usage
 
-For details, follow the tutorials in [notebooks](notebooks) dir.
+See our [documentation](https://joeynmt.readthedocs.io)!
+
+
+## Benchmarks & Pretrained models
+
+We provide several benchmark results [here](https://joeynmt.readthedocs.io/en/latest/benchmarks.html).
+
+These models are available via torch hub API:
+
+```python
+import torch
+
+model = torch.hub.load('joeynmt/joeynmt', 'wmt14_ende')
+translations = model.translate(["Hello world!"])
+print(translations[0])  # ['Hallo Welt!']
+```
+
+
+## Tutorials
+Follow the tutorials in [notebooks](notebooks) dir.
 
 #### v2.x
 - [quick start with joeynmt2](notebooks/joey_v2_demo.ipynb) This quick start guide walks you step-by-step through the installation, data preparation, training, and evaluation.
 - [torch hub interface](notebooks/torchhub.ipynb) How to generate translation from a pretrained model
+- [tokenizer tutorial](notebooks/tokenizer_tutorial_en.ipynb)
+- [joeyS2T ASR tutorial](https://github.com/may-/joeys2t/blob/main/notebooks/joeyS2T_ASR_tutorial.ipynb)
 
 #### v1.x
 - [demo notebook](notebooks/joey_v1_demo.ipynb)
 - [starter notebook](https://github.com/masakhane-io/masakhane-mt/blob/master/starter_notebook-custom-data.ipynb) Masakhane - Machine Translation for African Languages in [masakhane-io](https://github.com/masakhane-io/masakhane-mt)
 - [joeynmt toy models](https://github.com/bricksdont/joeynmt-toy-models) Collection of Joey NMT scripts by [@bricksdont](https://github.com/bricksdont)
-
-## Usage
-> :warning: **Warning**
-> For Joey NMT v1.x, please refer the archive [here](docs/JoeyNMT_v1.md).
-
-Joey NMT has 3 modes: `train`, `test`, and `translate`, and all of them takes a
-[YAML](https://yaml.org/)-style config file as argument.
-You can find examples in the `configs` directory.
-`transformer_small.yaml` contains a detailed explanation of configuration options.
-
-Most importantly, the configuration contains the description of the model architecture
-(e.g. number of hidden units in the encoder RNN), paths to the training, development and
-test data, and the training hyperparameters (learning rate, validation frequency etc.).
-
-> :memo: **Info**
-> Note that subword model training and joint vocabulary creation is not included
-> in the 3 modes above, has to be done separately.
-> We provide a script that takes care of it: `scritps/build_vocab.py`.
-> ```bash
-> python scripts/build_vocab.py configs/transformer_small.yaml --joint
-> ```
-
-### `train` mode
-For training, run 
-```bash
-python -m joeynmt train configs/transformer_small.yaml
-```
-This will train a model on the training data, validate on validation data, and store
-model parameters, vocabularies, validation outputs. All needed information should be
-specified in the `data`, `training` and `model` sections of the config file (here
-`configs/transformer_small.yaml`).
-
-```
-model_dir/
-├── *.ckpt          # checkpoints
-├── *.hyps          # translated texts at validation
-├── config.yaml     # config file
-├── spm.model       # sentencepiece model / subword-nmt codes file
-├── src_vocab.txt   # src vocab
-├── trg_vocab.txt   # trg vocab
-├── train.log       # train log
-└── validation.txt  # validation scores
-```
-
-> :bulb: **Tip**
-> Be careful not to overwrite `model_dir`, set `overwrite: False` in the config file.
-
-### `test` mode
-This mode will generate translations for validation and test set (as specified in the
-configuration) in `model_dir/out.[dev|test]`.
-```bash
-python -m joeynmt test configs/transformer_small.yaml
-```
-You can specify the ckpt path explicitly in the config file. If `load_model` is not given
-in the config, the best model in `model_dir` will be used to generate translations.
-
-You can specify i.e. [sacrebleu](https://github.com/mjpost/sacrebleu) options in the
-`test` section of the config file.
-
-> :bulb: **Tip**
-> `scripts/average_checkpoints.py` will generate averaged checkpoints for you.
-> ```bash
-> python scripts/average_checkpoints.py --inputs model_dir/*00.ckpt --output model_dir/avg.ckpt
-> ```
-
-If you want to output the log-probabilities of the hypotheses or references, you can
-specify `return_score: 'hyp'` or `return_score: 'ref'` in the testing section of the
-config. And run `test` with `--output_path` and `--save_scores` options.
-```bash
-python -m joeynmt test configs/transformer_small.yaml --output-path model_dir/pred --save-scores
-```
-This will generate `model_dir/pred.{dev|test}.{scores|tokens}` which contains scores and corresponding tokens.
-
-> :memo: **Info**
-> - If you set `return_score: 'hyp'` with greedy decoding, then token-wise scores will be returned. The beam search will return sequence-level scores, because the scores are summed up per sequence during beam exploration.
-> - If you set `return_score: 'ref'`, the model looks up the probabilities of the given ground truth tokens, and both decoding and evaluation will be skipped.
-> - If you specify `n_best` >1 in config, the first translation in the nbest list will be used in the evaluation.
-
-### `translate` mode
-This mode accepts inputs from stdin and generate translations.
-
-- File translation
-  ```bash
-  python -m joeynmt translate configs/transformer_small.yaml < my_input.txt > output.txt
-  ```
-
-- Interactive translation
-  ```bash
-  python -m joeynmt translate configs/transformer_small.yaml
-  ```
-  You'll be prompted to type an input sentence. Joey NMT will then translate with the 
-  model specified in the config file.
-
-  > :bulb: **Tip**
-  > Interactive `translate` mode doesn't work with Multi-GPU.
-  > Please run it on single GPU or CPU.
-
-
-## Benchmarks & pretrained models
-
-### iwslt14 de/en/fr multilingual
-We trained this multilingual model with JoeyNMT v2.3.0 using DDP.
-
-Direction | Architecture | tok | dev | test | #params | download
---------- | :----------: | :-- | --: | ---: | ------: | :-------
-en->de    | Transformer  | sentencepiece | - | 28.88 | 200M | [iwslt14_prompt](https://huggingface.co/may-ohta/iwslt14_prompt)
-de->en    |  |  | - | 35.28 |  |
-en->fr    |  |  | - | 38.86 |  |
-fr->en    |  |  | - | 40.35 |  |
-
-sacrebleu signature: `nrefs:1|case:lc|eff:no|tok:13a|smooth:exp|version:2.4.0`
-
-### wmt14 ende / deen
-We trained the models with JoeyNMT v2.1.0 from scratch.  
-cf) [wmt14 deen leaderboard](https://paperswithcode.com/sota/machine-translation-on-wmt2014-german-english) in paperswithcode
-
-Direction | Architecture | tok | dev | test | #params | download
---------- | :----------: | :-- | --: | ---: | ------: | :-------
-en->de | Transformer | sentencepiece | 24.36 | 24.38 | 60.5M | [wmt14_ende.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/wmt14_ende.tar.gz) (766M)
-de->en | Transformer | sentencepiece | 30.60 | 30.51 | 60.5M | [wmt14_deen.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/wmt14_deen.tar.gz) (766M)
-
-sacrebleu signature: `nrefs:1|case:mixed|eff:no|tok:13a|smooth:exp|version:2.2.0`
-
----
-
-> :warning: **Warning**
-> The following models are trained with JoeynNMT v1.x, and decoded with Joey NMT v2.0. 
-> See `config_v1.yaml` and `config_v2.yaml` in the linked zip, respectively.
-> Joey NMT v1.x benchmarks are archived [here](docs/benchmarks_v1.md).
-
-### iwslt14 deen
-Pre-processing with Moses decoder tools as in [this script](scripts/get_iwslt14_bpe.sh).
-
-Direction | Architecture | tok | dev | test | #params | download
---------- | :----------: | :-- | --: | ---: | ------: | :-------
-de->en | RNN | subword-nmt | 31.77 | 30.74 | 61M | [rnn_iwslt14_deen_bpe.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/rnn_iwslt14_deen_bpe.tar.gz) (672MB)
-de->en | Transformer | subword-nmt | 34.53 | 33.73 | 19M | [transformer_iwslt14_deen_bpe.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/transformer_iwslt14_deen_bpe.tar.gz) (221MB)
-
-sacrebleu signature: `nrefs:1|case:lc|eff:no|tok:13a|smooth:exp|version:2.0.0`
-
-> :memo: **Info**
-> For interactive translate mode, you should specify `pretokenizer: "moses"` in the both src's and trg's `tokenizer_cfg`,
-> so that you can input raw sentence. Then `MosesTokenizer` and `MosesDetokenizer` will be applied internally.
-> For test mode, we used the preprocessed texts as input and set `pretokenizer: "none"` in the config.
-
-### Masakhane JW300 afen / enaf
-We picked the pretrained models and configs (bpe codes file etc.) from [masakhane.io](https://github.com/masakhane-io/masakhane-mt).
-
-Direction | Architecture | tok | dev | test | #params | download
---------- | :----------: | :-- | --: | ---: | ------: | :-------
-af->en | Transformer | subword-nmt | - | 57.70 | 46M | [transformer_jw300_afen.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/transformer_jw300_afen.tar.gz) (525MB)
-en->af | Transformer | subword-nmt | 47.24 | 47.31 | 24M | [transformer_jw300_enaf.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/transformer_jw300_enaf.tar.gz) (285MB)
-
-sacrebleu signature: `nrefs:1|case:mixed|eff:no|tok:intl|smooth:exp|version:2.0.0`
-
-### JParaCrawl enja / jaen
-For training, we split JparaCrawl v2 into train and dev set and trained a model on them.
-Please check the preprocessing script [here](https://github.com/joeynmt/joeynmt/blob/v2.2/scripts/get_jparacrawl.sh).
-We tested then on [kftt](http://www.phontron.com/kftt/) test set and [wmt20](https://data.statmt.org/wmt20/translation-task/) test set, respectively. 
-
-Direction | Architecture | tok | wmt20 | kftt | #params | download
---------- | ------------ | :-- | ---: | ------: | ------: | :-------
-en->ja | Transformer | sentencepiece | 17.66 | 14.31 | 225M | [jparacrawl_enja.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/jparacrawl_enja.tar.gz) (2.3GB)
-ja->en | Transformer | sentencepiece | 14.97 | 11.49 | 221M | [jparacrawl_jaen.tar.gz](https://cl.uni-heidelberg.de/statnlpgroup/joeynmt2/jparacrawl_jaen.tar.gz) (2.2GB)
-
-sacrebleu signature: 
-- en->ja `nrefs:1|case:mixed|eff:no|tok:ja-mecab-0.996-IPA|smooth:exp|version:2.0.0`
-- ja->en `nrefs:1|case:mixed|eff:no|tok:intl|smooth:exp|version:2.0.0`
-
-*Note: In wmt20 test set, `newstest2020-enja` has 1000 examples, `newstest2020-jaen` has 993 examples.*
 
 
 ## Coding
