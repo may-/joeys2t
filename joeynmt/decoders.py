@@ -12,7 +12,10 @@ from joeynmt.builders import build_activation
 from joeynmt.config import ConfigurationError
 from joeynmt.encoders import Encoder
 from joeynmt.helpers import freeze_params, subsequent_mask
+from joeynmt.helpers_for_ddp import get_logger
 from joeynmt.transformer_layers import PositionalEncoding, TransformerDecoderLayer
+
+logger = get_logger(__name__)
 
 
 class Decoder(nn.Module):
@@ -150,6 +153,8 @@ class RecurrentDecoder(Decoder):
 
         if freeze:
             freeze_params(self)
+
+        self.ctc_output_layer = None  # not supported
 
     def _check_shapes_input_forward_step(
         self,
@@ -353,6 +358,7 @@ class RecurrentDecoder(Decoder):
                 with shape (batch_size, unroll_steps, src_length),
             - att_vectors: attentional vectors
                 with shape (batch_size, unroll_steps, hidden_size)
+            - None
         """
         # initialize decoder hidden state from final encoder hidden state
         if hidden is None and encoder_hidden is not None:
@@ -432,7 +438,7 @@ class RecurrentDecoder(Decoder):
             assert hidden.size(0) == batch_size
         # shape (batch_size, num_layers, hidden_size)
 
-        return outputs, hidden, att_probs, att_vectors
+        return outputs, hidden, att_probs, att_vectors, None
 
     def _init_hidden(self,
                      encoder_final: Tensor = None) -> Tuple[Tensor, Optional[Tensor]]:
@@ -551,6 +557,13 @@ class TransformerDecoder(Decoder):
         if freeze:
             freeze_params(self)
 
+        self.ctc_output_layer = None
+        encoder_output_size = kwargs.get("encoder_output_size_for_ctc", None)
+        if encoder_output_size is not None:
+            self.ctc_output_layer = nn.Linear(
+                encoder_output_size, vocab_size, bias=False
+            )
+
     def forward(
         self,
         trg_embed: Tensor,
@@ -579,6 +592,7 @@ class TransformerDecoder(Decoder):
             - decoder_hidden: shape (batch_size, seq_len, emb_size)
             - att_probs: shape (batch_size, trg_length, src_length),
             - None
+            - ctc_output
         """
         assert trg_mask is not None, "trg_mask required for Transformer"
 
@@ -604,7 +618,11 @@ class TransformerDecoder(Decoder):
             x = self.layer_norm(x)
 
         out = self.output_layer(x)
-        return out, x, att, None
+
+        ctc_output = None if self.ctc_output_layer is None \
+            else self.ctc_output_layer(encoder_output)
+
+        return out, x, att, None, ctc_output
 
     def __repr__(self):
         return (
@@ -612,5 +630,6 @@ class TransformerDecoder(Decoder):
             f"num_heads={self.layers[0].trg_trg_att.num_heads}, "
             f"alpha={self.layers[0].alpha}, "
             f'layer_norm="{self.layers[0]._layer_norm_position}", '
-            f"activation={self.layers[0].feed_forward.pwff_layer[1]})"
+            f'activation="{self.layers[0].feed_forward.pwff_layer[1]}", '
+            f'ctc_layer={self.ctc_output_layer is not None})'
         )

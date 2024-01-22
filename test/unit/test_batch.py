@@ -46,8 +46,8 @@ class TestBatch(unittest.TestCase):
 
         # load the data
         _, trg_vocab, self.train_data, self.dev_data, _ = load_data(
-            data_cfg, datasets=["train", "dev"]
-        )
+            data_cfg, datasets=["train", "dev"], task="MT",
+        )  # yapf: disable
         self.eos_index = trg_vocab.eos_index
         self.pad_index = trg_vocab.pad_index
         # random seed
@@ -232,7 +232,9 @@ class TestPrompt(unittest.TestCase):
                 }
             ),
         }
-        _, trg_vocab, _, self.dev_data, _ = load_data(data_cfg, datasets=["dev"])
+        _, trg_vocab, _, self.dev_data, _ = load_data(
+            data_cfg, datasets=["dev"], task="MT",
+        )  # yapf: disable
         self.pad_index = trg_vocab.pad_index
         self.eos_index = trg_vocab.eos_index
 

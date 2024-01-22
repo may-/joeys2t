@@ -55,7 +55,7 @@ class TestDataSampler(unittest.TestCase):
 
         # load toy data
         _, self.trg_vocab, self.train_data, self.dev_data, self.test_data = load_data(
-            data_cfg, datasets=["train", "dev", "test"]
+            data_cfg, datasets=["train", "dev", "test"], task="MT"
         )
 
         # random seed
@@ -64,7 +64,7 @@ class TestDataSampler(unittest.TestCase):
     def testSentenceBatchSampler(self):
         batch_size = 10  # 10 sentences
 
-        # load all sents here, filtering happends in iterator
+        # load all sents here, filtering happens in iterator
         self.assertEqual(len(self.train_data), 1000)
 
         # make batches by number of sentences
@@ -179,3 +179,93 @@ class TestDataSampler(unittest.TestCase):
                 "Can only subsample from train or dev set larger than 10.",
                 str(e.exception)
             )
+
+
+class TestSpeechData(unittest.TestCase):
+
+    def setUp(self):
+        self.seed = 42
+
+        # minimal data config
+        self.data_cfg = {
+            "train": "test/data/speech/test",
+            "test": "test/data/speech/test",
+            "src": {
+                "lang": "en",
+                "level": "frame",
+                "num_freq": 80,
+                "max_length": 500,
+                "tokenizer_type": "speech",
+            },
+            "trg": {
+                "lang": "en", "level": "char", "lowercase": True, "max_length": 50,
+                "voc_file": "test/data/speech/char.txt"
+            },
+            "dataset_type": "speech",
+            "special_symbols": SimpleNamespace(
+                **{
+                    "unk_token": "<unk>",
+                    "pad_token": "<pad>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
+                    "sep_token": None,
+                    "unk_id": 0,
+                    "pad_id": 1,
+                    "bos_id": 2,
+                    "eos_id": 3,
+                    "sep_id": None,
+                    "lang_tags": [],
+                }
+            ),
+        }
+
+    def testIteratorBatchShape(self):
+
+        current_cfg = self.data_cfg.copy()
+
+        # load speech data
+        _, trg_vocab, train_data, _, test_data = load_data(
+            current_cfg, datasets=["train", "test"], task="S2T"
+        )
+
+        # no filtering in data loading
+        self.assertEqual(len(train_data), 10)
+        self.assertEqual(len(test_data), 10)
+
+        # make train batches (filtered by length)
+        train_iter = iter(
+            train_data.make_iter(
+                batch_size=2,
+                batch_type="sentence",
+                shuffle=True,
+                seed=self.seed,
+                pad_index=trg_vocab.pad_index,
+                device=torch.device("cpu"),
+                num_workers=0,
+            )
+        )
+        _ = next(train_iter)  # skip a batch
+        _ = next(train_iter)  # skip another batch
+        train_batch = next(train_iter)
+
+        self.assertEqual(train_batch.src.shape, (2, 310, 80))
+        self.assertEqual(train_batch.trg.shape, (2, 42))
+
+        # make test batches (not filtered by length)
+        test_iter = iter(
+            test_data.make_iter(
+                batch_size=2,
+                batch_type="sentence",
+                shuffle=False,
+                seed=self.seed,
+                pad_index=trg_vocab.pad_index,
+                device=torch.device("cpu"),
+                num_workers=0,
+            )
+        )
+        _ = next(test_iter)  # skip a batch
+        _ = next(test_iter)  # skip another batch
+        test_batch = next(test_iter)
+
+        self.assertEqual(test_batch.src.shape, (2, 500, 80))
+        self.assertEqual(test_batch.trg.shape, (2, 169))

@@ -1,0 +1,133 @@
+name: "mustc-v2-ende-mt"
+joeynmt_version: "2.3.0"
+task: "MT"                    # task, either "MT" for machine translation, or "S2T" for speech-to-text
+model_dir: "models/mustc_v2_mt"
+use_cuda: True
+fp16: False
+random_seed: 42
+
+data: # specify your data here
+    train: "data/MUSTC_v2.0/en-de/train"      # training data
+    dev: "data/MUSTC_v2.0/en-de/dev"          # development data for validation
+    test: "data/MUSTC_v2.0/en-de/tst-COMMON"  # test data for testing final model; optional
+    dataset_type: "plain"
+    sample_dev_subset: 200
+    src:
+        lang: "en"
+        level: "bpe"              # segmentation level: either "word", "bpe" or "char"
+        lowercase: True           # lowercase the data, also for validation
+        max_length: 100           # filter out longer sentences from training (trg)
+        voc_min_freq: 1           # trg minimum frequency for a token to become part of the vocabulary
+        voc_limit: 7000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
+        voc_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.vocab"  # one token per line, line number is index
+        tokenizer_type: "sentencepiece"
+        tokenizer_cfg:
+            model_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.model"  # sentence piece model path
+            alpha: 0.9
+            nbest_size: 10
+            pretokenizer: "none"
+    trg:
+        lang: "de"
+        level: "bpe"
+        lowercase: False
+        max_length: 120
+        voc_min_freq: 1
+        voc_limit: 7000
+        voc_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.vocab"  # one token per line, line number is index
+        tokenizer_type: "sentencepiece"
+        tokenizer_cfg:
+            model_file: "data/MUSTC_v2.0/en-de/spm_bpe7000.model"  # sentence piece model path
+            alpha: 0.9
+            nbest_size: 10
+            pretokenizer: "none"
+    special_symbols:
+        unk_token: "<unk>"
+        unk_id: 0
+        pad_token: "<pad>"
+        pad_id: 1
+        bos_token: "<s>"
+        bos_id: 2
+        eos_token: "</s>"
+        eos_id: 3
+
+testing:
+    load_model: "models/mustc_v2_mt/best.ckpt"
+    beam_size: 5
+    beam_alpha: 1.0
+    batch_size: 4000
+    batch_type: "token"
+    max_output_length: 120
+    eval_metrics: ["bleu"]
+    sacrebleu_cfg:
+        tokenize: "13a"
+
+training:
+    #load_model: "models/mustc_v2_mt/best.ckpt"
+    reset_best_ckpt: False
+    reset_scheduler: False
+    reset_optimizer: False
+    reset_iter_state: False
+    optimizer: "adamw"
+    adam_betas: [0.9, 0.99]
+    scheduling: "warmupinversesquareroot"
+    learning_rate: 1.0e-4
+    learning_rate_min: 1.0e-6
+    learning_rate_warmup: 4000
+    clip_grad_norm: 1.0
+    weight_decay: 0.0
+    label_smoothing: 0.1
+    batch_multiplier: 4
+    normalization: "batch"
+    batch_size: 4000
+    batch_type: "token"
+    early_stopping_metric: "bleu"
+    epochs: 100
+    updates: 100000
+    validation_freq: 1000
+    logging_freq: 100
+    overwrite: False
+    shuffle: True
+    print_valid_sents: [0, 1, 2]
+    keep_best_ckpts: 10
+    loss: "crossentropy"
+
+model:
+    initializer: "xavier_uniform"
+    init_gain: 1.0
+    embed_initializer: "xavier_uniform"
+    embed_init_gain: 1.0
+    bias_initializer: "zeros"
+    tied_embeddings: True
+    tied_softmax: True
+    encoder:
+        type: "transformer"
+        num_layers: 8
+        num_heads: 4
+        embeddings:
+            embedding_dim: 512
+            scale: True
+            dropout: 0.1
+            freeze: False
+        # typically ff_size = 8 x hidden_size
+        hidden_size: 512
+        ff_size: 2048
+        dropout: 0.1
+        freeze: False
+        layer_norm: "pre"
+        activation: "relu"
+    decoder:
+        type: "transformer"
+        num_layers: 8
+        num_heads: 4
+        embeddings:
+            embedding_dim: 512
+            scale: True
+            dropout: 0.1
+            freeze: False
+        # ff_size = 8 x hidden_size
+        hidden_size: 512
+        ff_size: 2048
+        dropout: 0.1
+        freeze: False
+        layer_norm: "pre"
+        activation: "relu"

@@ -29,6 +29,10 @@ TrainConfig = NamedTuple(
         ("load_model", Optional[Path]),
         ("load_encoder", Optional[Path]),
         ("load_decoder", Optional[Path]),
+        ("reset_best_ckpt", bool),
+        ("reset_scheduler", bool),
+        ("reset_optimizer", bool),
+        ("reset_iter_state", bool),
         ("loss", str),
         ("normalization", str),
         ("label_smoothing", float),
@@ -56,10 +60,7 @@ TrainConfig = NamedTuple(
         ("batch_size", int),
         ("batch_type", str),
         ("batch_multiplier", int),
-        ("reset_best_ckpt", bool),
-        ("reset_scheduler", bool),
-        ("reset_optimizer", bool),
-        ("reset_iter_state", bool),
+        ("ctc_weight", float),
     ],
 )
 
@@ -89,10 +90,12 @@ BaseConfig = NamedTuple(
     [
         ("name", str),
         ("joeynmt_version", Optional[str]),
+        ("task", str),
         ("model_dir", Path),
         ("device", torch.device),
         ("n_gpu", int),
         ("num_workers", int),
+        ("fp16", bool),
         ("autocast", Dict),
         ("seed", int),
         ("train", TrainConfig),
@@ -176,16 +179,20 @@ def parse_global_args(
     """
     Parse and validate global args
 
-    :param cfg: config specified in yaml file
+    :param cfg: config specified in yaml fil
     :param rank:
     :param mode:
     """
+    # task
+    task = cfg.get("task", cfg["data"].get("task", "MT")).upper()
+    _check_options("task", task, ["MT", "S2T"])
 
     # gpu / cpu
     use_cuda = cfg.get("use_cuda", cfg["training"].get("use_cuda", True))
     if use_cuda and (not torch.cuda.is_available()):
         logger.warning("CUDA is not available. Use cpu device.")
         use_cuda = False
+
     if use_cuda:
         device = torch.device("cuda", rank) if use_ddp() else torch.device("cuda")
     else:
@@ -206,12 +213,13 @@ def parse_global_args(
     _check_options("normalization", normalization, ["batch", "tokens", "none"])
 
     # fp16
-    fp16 = cfg.get("fp16", False)
+    fp16 = cfg.get("fp16", cfg["training"].get("fp16", False))
     if device.type == "cpu" and fp16:
         logger.warning(
             "On cpu, half-precision training may raise an error. Disable fp16."
         )
         fp16 = False
+
     autocast = {"device_type": device.type, "enabled": fp16}
     if fp16:
         autocast["dtype"] = torch.float16  # TODO: torch.bfloat16 for cpu?
@@ -226,10 +234,12 @@ def parse_global_args(
     return BaseConfig(
         name=cfg["name"],
         joeynmt_version=cfg.get("joeynmt_version", "2.3.0"),
+        task=task,
         model_dir=_check_path(cfg["model_dir"]),
         device=device,
         n_gpu=n_gpu,
         num_workers=num_workers,
+        fp16=fp16,
         autocast=autocast,
         seed=cfg.get("random_seed", 42),
         train=parse_train_args(cfg["training"], mode),
@@ -253,7 +263,7 @@ def parse_train_args(cfg: Dict = None, mode: str = "train") -> TrainConfig:
 
     # objective
     loss_type = cfg.get("loss", "crossentropy")
-    _check_options("loss", loss_type, ["crossentropy"])
+    _check_options("loss", loss_type, ["crossentropy", "crossentropy-ctc"])
 
     # save/delete checkpoints
     keep_best_ckpts = int(cfg.get("keep_best_ckpts", 5))
@@ -269,13 +279,13 @@ def parse_train_args(cfg: Dict = None, mode: str = "train") -> TrainConfig:
     early_stopping_metric = cfg.get("early_stopping_metric", "ppl").lower()
     _check_options(
         "early_stopping_metric", early_stopping_metric,
-        ["acc", "loss", "ppl", "bleu", "chrf"]
+        ["acc", "loss", "ppl", "bleu", "chrf", "wer"]
     )
 
     # early_stopping_metric decides on how to find the early stopping point: ckpts
     # are written when there's a new high/low score for this metric. If we schedule
     # after loss/ppl, we want to minimize the score, else we want to maximize it.
-    if early_stopping_metric in ["ppl", "loss"]:  # lower is better
+    if early_stopping_metric in ["ppl", "loss", "wer"]:  # lower is better
         minimize_metric = True
     elif early_stopping_metric in ["acc", "bleu", "chrf"]:  # higher is better
         minimize_metric = False
@@ -283,6 +293,7 @@ def parse_train_args(cfg: Dict = None, mode: str = "train") -> TrainConfig:
     # batch handling
     batch_type = cfg.get("batch_type", "sentence").lower()
     _check_options("batch_type", batch_type, ["sentence", "token"])
+
     if use_ddp():
         assert batch_type == "sentence", (
             "Token-based batch sampling is not supported in distributed learning. "
@@ -307,6 +318,10 @@ def parse_train_args(cfg: Dict = None, mode: str = "train") -> TrainConfig:
         load_model=_check_path(cfg.get("load_model", None), allow_empty=is_test),
         load_encoder=_check_path(cfg.get("load_encoder", None), allow_empty=is_test),
         load_decoder=_check_path(cfg.get("load_decoder", None), allow_empty=is_test),
+        reset_best_ckpt=cfg.get("reset_best_ckpt", False),
+        reset_scheduler=cfg.get("reset_scheduler", False),
+        reset_optimizer=cfg.get("reset_optimizer", False),
+        reset_iter_state=cfg.get("reset_iter_state", False),
         normalization=normalization,
         loss=loss_type,
         label_smoothing=cfg.get("label_smoothing", 0.0),
@@ -334,10 +349,7 @@ def parse_train_args(cfg: Dict = None, mode: str = "train") -> TrainConfig:
         batch_size=cfg["batch_size"],
         batch_type=batch_type,
         batch_multiplier=cfg.get("batch_multiplier", 1),
-        reset_best_ckpt=cfg.get("reset_best_ckpt", False),
-        reset_scheduler=cfg.get("reset_scheduler", False),
-        reset_optimizer=cfg.get("reset_optimizer", False),
-        reset_iter_state=cfg.get("reset_iter_state", False),
+        ctc_weight=cfg.get("ctc_weight", 0.0),
     )
 
 
@@ -373,7 +385,7 @@ def parse_test_args(cfg: Dict = None, mode: str = "test") -> TestConfig:
     for eval_metric in eval_metrics:
         _check_options(
             "eval_metric", eval_metric,
-            ["bleu", "chrf", "token_accuracy", "sequence_accuracy"]
+            ["bleu", "chrf", "token_accuracy", "sequence_accuracy", "wer"]
         )
 
     # sacrebleu cfg
@@ -445,10 +457,13 @@ def set_validation_args(args: TestConfig) -> TestConfig:
             "Token-based batch sampling is not supported in distributed learning. "
             "Please specify batch size based on the num. of sentences."
         )
+
     args = args._replace(
+        batch_size=args.batch_size,
+        batch_type=args.batch_type,
         beam_size=1,  # greedy decoding during train loop
         n_best=1,  # no further exploration during training
-        return_attention=False,
+        # return_attention = False,  # don't override this arg
         return_prob="none",
         generate_unk=True,
         repetition_penalty=-1,  # turn off

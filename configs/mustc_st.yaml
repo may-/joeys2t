@@ -1,0 +1,143 @@
+name: "mustc-v2-en-st"
+joeynmt_version: "2.3.0"
+task: "S2T"                    # task, either "MT" for machine translation, or "S2T" for speech-to-text
+model_dir: "models/mustc_v2_st"
+use_cuda: True
+fp16: False
+random_seed: 42
+
+data: # specify your data here
+    train: "data/MUSTC_v2.0/en-de/joey_train_st"
+    dev: "data/MUSTC_v2.0/en-de/joey_dev_st"
+    test: "data/MUSTC_v2.0/en-de/joey_tst-COMMON_st"
+    dataset_type: "speech"
+    sample_dev_subset: 200
+    src:
+        lang: "en"
+        level: "frame"
+        num_freq: 80                # number of frequencies of audio inputs
+        min_length: 10              # filter out shorter audios from training (src)
+        max_length: 5000            # filter out longer audios from training (src)
+        tokenizer_type: "speech"    # invoke speech processor
+        tokenizer_cfg:
+            specaugment:
+                freq_mask_n: 2
+                freq_mask_f: 27
+                time_mask_n: 2
+                time_mask_t: 100
+                time_mask_p: 1.0
+            cmvn:
+                norm_means: True
+                norm_vars: True
+                before: True
+    trg:
+        lang: "en"
+        level: "bpe"              # segmentation level: either "word", "bpe" or "char"
+        lowercase: True           # lowercase the data, also for validation
+        max_length: 80            # filter out longer sentences from training (trg)
+        voc_min_freq: 1           # trg minimum frequency for a token to become part of the vocabulary
+        voc_limit: 5000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
+        voc_file: "data/MUSTC_v2.0/en-de/spm_bpe5000.vocab.txt"  # one token per line, line number is index
+        tokenizer_type: "sentencepiece"
+        tokenizer_cfg:
+            model_file: "data/MUSTC_v2.0/en-de/spm_bpe5000.model"  # sentence piece model path
+            pretokenizer: "none"
+    special_symbols:
+        unk_token: "<unk>"
+        unk_id: 0
+        pad_token: "<pad>"
+        pad_id: 1
+        bos_token: "<s>"
+        bos_id: 2
+        eos_token: "</s>"
+        eos_id: 3
+
+testing:                            # specify which inference algorithm to use for testing (for validation it's always greedy decoding)
+    load_model: "models/mustc_v2_st/latest.ckpt"
+    beam_size: 5                    # size of the beam for beam search
+    beam_alpha: 1.0                 # length penalty for beam search
+    batch_size: 10000               # mini-batch size for evaluation (see batch_size above)
+    batch_type: "token"             # evaluation batch type ("sentence", default) or tokens ("token")
+    max_output_length: 100          # maximum output length for decoding, default: None. If set to None, allow sentences of max 1.5*src length
+    eval_metrics: ["bleu"]          # validation metric, default: "bleu", other options: "chrf", "token_accuracy", "sequence_accuracy", "wer"
+    sacrebleu_cfg:
+        tokenize: "13a"
+
+training:
+    #load_model: "models/mustc_v2_st/latest.ckpt"
+    load_encoder: "models/mustc_v2_asr/best.ckpt"
+    load_decoder: "models/mustc_v2_mt/best.ckpt"
+    reset_best_ckpt: False
+    reset_scheduler: False
+    reset_optimizer: False
+    reset_iter_state: False
+    optimizer: "adamw"
+    adam_betas: [0.9, 0.99]
+    scheduling: "warmupinversesquareroot"
+    learning_rate: 2.0e-3
+    learning_rate_min: 1.0e-6
+    learning_rate_warmup: 10000
+    clip_grad_norm: 10.0
+    weight_decay: 0.0
+    label_smoothing: 0.1
+    batch_multiplier: 8
+    normalization: "batch"
+    batch_size: 20000
+    batch_type: "token"
+    early_stopping_metric: "bleu"
+    epochs: 100
+    updates: 100000
+    validation_freq: 1000
+    logging_freq: 100
+    overwrite: False
+    shuffle: True
+    print_valid_sents: [0, 1, 2]
+    keep_best_ckpts: 10
+    loss: "crossentropy-ctc"
+    ctc_weight: 0.1
+
+model:
+    initializer: "xavier_normal"
+    init_gain: 1.0
+    embed_initializer: "xavier_normal"
+    embed_init_gain: 1.0
+    bias_initializer: "zeros"
+    tied_embeddings: False
+    tied_softmax: False
+    encoder:
+        type: "transformer"
+        num_layers: 12
+        num_heads: 8
+        embeddings:
+            embedding_dim: 80
+            #embedding_dim: 512
+            #scale: True
+            #dropout: 0.
+            #freeze: False
+        # typically ff_size = 8 x hidden_size
+        hidden_size: 512
+        ff_size: 2048
+        dropout: 0.1
+        freeze: False
+        subsample: True
+        conv_kernel_sizes: [5, 5]
+        conv_channels: 512
+        in_channels: 80
+        layer_norm: "pre"
+        activation: "relu"
+    decoder:
+        type: "transformer"
+        num_layers: 6
+        num_heads: 8
+        embeddings:
+            embedding_dim: 512
+            scale: True
+            dropout: 0.
+            freeze: False
+        # ff_size = 8 x hidden_size
+        hidden_size: 512
+        ff_size: 2048
+        dropout: 0.1
+        freeze: False
+        layer_norm: "pre"
+        activation: "relu"

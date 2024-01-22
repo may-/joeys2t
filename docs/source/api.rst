@@ -52,6 +52,14 @@ joeynmt.config module
     :show-inheritance:
 
 
+joeynmt.data_augmentation module
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. automodule:: joeynmt.data_augmentation
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 joeynmt.data module
 ^^^^^^^^^^^^^^^^^^^
 .. automodule:: joeynmt.data
@@ -96,6 +104,24 @@ joeynmt.encoders module
     :show-inheritance:
 
 
+joeynmt.helpers_for_audio module
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: joeynmt.helpers_for_audio
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
+joeynmt.helpers_for_ddp module
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: joeynmt.helpers_for_ddp
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 joeynmt.helpers module
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -105,10 +131,28 @@ joeynmt.helpers module
     :show-inheritance:
 
 
+joeynmt.hub_interface module
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: joeynmt.hub_interface
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 joeynmt.initialization module
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: joeynmt.initialization
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
+joeynmt.loss module
+^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: joeynmt.loss
     :members:
     :undoc-members:
     :show-inheritance:
@@ -176,28 +220,19 @@ joeynmt.training module
     :show-inheritance:
 
 
-joeynmt.vocabulary module
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: joeynmt.vocabulary
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-
-joeynmt.loss module
-^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: joeynmt.loss
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-
 joeynmt.transformer_layers module
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: joeynmt.transformer_layers
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
+joeynmt.vocabulary module
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: joeynmt.vocabulary
     :members:
     :undoc-members:
     :show-inheritance:

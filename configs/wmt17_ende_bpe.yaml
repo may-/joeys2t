@@ -1,5 +1,6 @@
 name: "wmt17_ende_bpe"
 joeynmt_version: "2.3.0"
+task: "MT"
 model_dir: "models/wmt17_ende_bpe"
 use_cuda: True
 random_seed: 42

@@ -12,8 +12,8 @@ from pathlib import Path
 import torch.hub
 
 dependencies = [
-    'torch', 'yaml', 'numpy', 'sentencepiece', 'subword_nmt', 'sacremoses',
-    'huggingface_hub'
+    'torch', 'torchaudio', 'yaml', 'numpy', 'matplotlib', 'pandas', 'sentencepiece',
+    'subword_nmt', 'sacremoses', 'editdistance', 'huggingface_hub'
 ]
 
 # Check for required dependencies and raise a RuntimeError if any are missing.
@@ -88,7 +88,6 @@ def _load_from_huggingface(
 
     force_reload = kwargs.get('force_reload', False)
     if (not force_reload) and download_dir.is_dir():
-        assert (download_dir / ckpt_file).is_file()
         logger.info('Model cache found in %s. Skip redownload.', download_dir)
     else:
         download_dir.mkdir(exist_ok=True)
@@ -202,6 +201,76 @@ def jparacrawl_enja(*args, **kwargs) -> TranslatorHubInterface:
     return _load_from_remote(
         model_name_or_path="jparacrawl_enja",
         ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def librispeech_960h_en_asr(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English ASR model trained on Librispeech 960h data
+    See: https://huggingface.co/datasets/librispeech_asr
+    """
+    # pylint: disable=unused-argument
+    return _load_from_remote(
+        model_name_or_path="librispeech960h",
+        ckpt_file="avg10.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def librispeech_100h_en_asr(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English ASR model trained on Librispeech 100h data
+    See: https://huggingface.co/datasets/librispeech_asr
+    """
+    # pylint: disable=unused-argument
+    return _load_from_remote(
+        model_name_or_path="librispeech100h",
+        ckpt_file="avg10.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def mustc_v2_en_asr(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English ASR model trained on MuST-C v2 data
+    See: https://huggingface.co/datasets/may-ohta/MUST-C
+    """
+    # pylint: disable=unused-argument
+    return _load_from_remote(
+        model_name_or_path="mustc_asr",
+        ckpt_file="avg10.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def mustc_v2_ende_mt(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English-German MT model trained on MuST-C v2 data
+    See: https://huggingface.co/datasets/may-ohta/MUST-C
+    """
+    # pylint: disable=unused-argument
+    return _load_from_remote(
+        model_name_or_path="mustc_mt",
+        ckpt_file="avg5.ckpt",
+        cfg_file="config.yaml",
+        **kwargs
+    )
+
+
+def mustc_v2_ende_st(*args, **kwargs) -> TranslatorHubInterface:
+    """
+    English-German ST model trained on MuST-C v2 data
+    See: https://huggingface.co/datasets/may-ohta/MUST-C
+    """
+    # pylint: disable=unused-argument
+    return _load_from_remote(
+        model_name_or_path="mustc_st",
+        ckpt_file="avg10.ckpt",
         cfg_file="config.yaml",
         **kwargs
     )

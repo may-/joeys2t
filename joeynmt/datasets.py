@@ -6,6 +6,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import pandas as pd
 import torch
 from torch.utils.data import BatchSampler, DataLoader, Dataset, Sampler
 
@@ -18,7 +19,7 @@ from joeynmt.helpers_for_ddp import (
     get_logger,
     use_ddp,
 )
-from joeynmt.tokenizers import BasicTokenizer
+from joeynmt.tokenizers import BasicTokenizer, SpeechProcessor
 
 logger = get_logger(__name__)
 CPU_DEVICE = torch.device("cpu")
@@ -50,7 +51,8 @@ class BaseDataset(Dataset):
         has_prompt: Dict[str, bool] = None,
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
-        random_subset: int = -1
+        random_subset: int = -1,
+        task: str = "MT",
     ):
 
         self.path = path
@@ -64,6 +66,13 @@ class BaseDataset(Dataset):
         self.tokenizer = tokenizer
         self.sequence_encoder = sequence_encoder
         self.has_prompt = has_prompt
+        assert self.src_lang in self.tokenizer, self.tokenizer
+        assert self.src_lang in self.sequence_encoder, self.sequence_encoder
+        assert self.src_lang in self.has_prompt, self.has_prompt
+        if self.has_trg:
+            assert self.trg_lang in self.tokenizer, self.tokenizer
+            assert self.trg_lang in self.sequence_encoder, self.sequence_encoder
+            assert self.trg_lang in self.has_prompt, self.has_prompt
 
         # for random subsampling
         self.random_subset = random_subset
@@ -71,6 +80,8 @@ class BaseDataset(Dataset):
         # Note: self.indices is kept sorted, even if shuffle = True in make_iter()
         # (Sampler yields permuted indices)
         self.seed = 1  # random seed for generator
+
+        self.task = task
 
     def reset_indices(self, random_subset: int = None):
         # should be called after data are loaded.
@@ -98,7 +109,7 @@ class BaseDataset(Dataset):
             - length-filtering, bpe-dropout etc also triggered if self.split == "train"
         """
 
-        # workaround if tokenizer prepends an extra escape symbol before lang_tang ...
+        # workaround if tokenizer prepends an extra escape symbol before lang_tags ...
         def _remove_escape(item):
             if (
                 item is not None and self.tokenizer[lang] is not None
@@ -193,27 +204,31 @@ class BaseDataset(Dataset):
         idx, src_list, trg_list = zip(*batch)
         assert len(batch) == len(src_list) == len(trg_list), (len(batch), len(src_list))
         assert all(s is not None for s in src_list), src_list
-        src, src_length, src_prompt_mask = self.sequence_encoder[
-            self.src_lang](src_list, bos=False, eos=True)
+        src, src_length, src_prompt_mask = self.sequence_encoder[self.src_lang
+                                                                 ](src_list)
 
         if self.has_trg or self.has_prompt[self.trg_lang]:
             if self.has_trg:
                 assert all(t is not None for t in trg_list), trg_list
-            trg, _, trg_prompt_mask = self.sequence_encoder[self.trg_lang](
+            trg, trg_length, trg_prompt_mask = self.sequence_encoder[self.trg_lang](
                 trg_list, bos=True, eos=self.has_trg
             )  # no EOS if not self.has_trg
         else:
             assert all(t is None for t in trg_list)
-            trg, trg_prompt_mask = None, None  # Note: we don't need trg_length!
+            trg, trg_length, trg_prompt_mask = None, None, None
 
         return Batch(
-            src=torch.tensor(src).long(),
+            src=(
+                torch.tensor(src).long()
+                if self.task == "MT" else torch.tensor(src).float()
+            ),
             src_length=torch.tensor(src_length).long(),
             src_prompt_mask=(
                 torch.tensor(src_prompt_mask).long()
                 if self.has_prompt[self.src_lang] else None
             ),
             trg=torch.tensor(trg).long() if trg else None,
+            trg_length=torch.tensor(trg_length).long() if trg_length else None,
             trg_prompt_mask=(
                 torch.tensor(trg_prompt_mask).long()
                 if self.has_prompt[self.trg_lang] else None
@@ -223,6 +238,7 @@ class BaseDataset(Dataset):
             pad_index=pad_index,
             eos_index=eos_index,
             is_train=self.split == "train",
+            task=self.task,
         )
 
     def make_iter(
@@ -303,7 +319,7 @@ class BaseDataset(Dataset):
                 pad_index=pad_index,
                 device=device
             ),
-            num_workers=num_workers
+            num_workers=num_workers,
         )
 
     def __len__(self) -> int:
@@ -331,11 +347,12 @@ class PlaintextDataset(BaseDataset):
         src_lang: str,
         trg_lang: str,
         split: str = "train",
-        has_trg: bool = False,
+        has_trg: bool = True,
         has_prompt: Dict[str, bool] = None,
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
         **kwargs
     ):
 
@@ -348,7 +365,8 @@ class PlaintextDataset(BaseDataset):
             has_prompt=has_prompt,
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
-            random_subset=random_subset
+            random_subset=random_subset,
+            task=task,
         )
 
         # load data
@@ -426,12 +444,13 @@ class TsvDataset(BaseDataset):
         src_lang: str,
         trg_lang: str,
         split: str = "train",
-        has_trg: bool = False,
+        has_trg: bool = True,
         has_prompt: Dict[str, bool] = None,
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
-        **kwargs
+        task: str = "MT",
+        **kwargs,
     ):
 
         super().__init__(
@@ -443,7 +462,8 @@ class TsvDataset(BaseDataset):
             has_prompt=has_prompt,
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
-            random_subset=random_subset
+            random_subset=random_subset,
+            task=task,
         )
 
         # load tsv file
@@ -456,8 +476,6 @@ class TsvDataset(BaseDataset):
         assert file_path.is_file(), f"{file_path} not found. Abort."
 
         try:
-            import pandas as pd  # pylint: disable=import-outside-toplevel
-
             # TODO: use `chunksize` for online data loading.
             df = pd.read_csv(
                 file_path.as_posix(),
@@ -521,6 +539,127 @@ class TsvDataset(BaseDataset):
         return len(self.df)
 
 
+class SpeechDataset(TsvDataset):
+    """
+    Speech Dataset
+    """
+
+    def __init__(
+        self,
+        path: str,
+        src_lang: str = "src",
+        trg_lang: str = "trg",
+        split: str = "train",
+        has_trg: bool = True,
+        has_prompt: Dict[str, bool] = None,
+        tokenizer: Dict[str, Union[BasicTokenizer, SpeechProcessor]] = None,
+        sequence_encoder: Dict[str, Callable] = None,
+        random_subset: int = -1,
+        task: str = "S2T",
+        **kwargs,
+    ):
+        super().__init__(
+            path=path,
+            src_lang=src_lang,  # "src"
+            trg_lang=trg_lang,  # "trg",
+            split=split,
+            has_trg=has_trg,
+            has_prompt=has_prompt,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=random_subset,
+            task=task,
+        )
+
+        # load tsv file
+        self.df = self.load_data(path, **kwargs)
+
+        assert isinstance(self.tokenizer["src"], SpeechProcessor)
+        self.tokenizer["src"].root_path = Path(path).parent
+
+        # for random subsampling
+        self._initial_df = None
+
+    def load_data(self, path: str, **kwargs) -> Any:
+        path = Path(path)
+        file_path = path.with_suffix(f"{path.suffix}.tsv")
+        assert file_path.is_file(), f"{file_path} not found. Abort."
+
+        # read tsv data
+        try:
+            # TODO: use `chunksize` for online data loading.
+            dtype = {'id': str, 'src': str, 'trg': str, 'n_frames': int}
+            df = pd.read_csv(
+                file_path.as_posix(),
+                sep="\t",
+                header=0,
+                encoding="utf-8",
+                escapechar="\\",
+                quoting=3,
+                na_filter=False,
+                dtype=dtype,
+            )
+
+            # WARNING: instances shorter than the kernel size cannot be convolved.
+            min_length = int(self.tokenizer["src"].min_length)
+            df['n_frames'] = df[df['n_frames'] > min_length]['n_frames']
+
+            # drop invalid rows
+            df = df.replace(r'^\s*$', float("nan"), regex=True)
+            df = df.dropna()
+
+            assert "src" in df.columns
+
+            if "trg" not in df.columns:
+                self.has_trg = False
+                assert self.split == "test"
+
+            if self.has_trg:
+                df["trg"] = df["trg"].apply(self.tokenizer["trg"].pre_process)
+
+            # if "src_prompt" in df.columns:
+            #     self.has_prompt["src"] = True
+            #     df["src_prompt"] = df["src_prompt"].apply(
+            #         self.tokenizer["src"].pre_process, allow_empty=True)
+            self.has_prompt["src"] = False
+            if "trg_prompt" in df.columns:
+                self.has_prompt["trg"] = True
+                df["trg_prompt"] = df["trg_prompt"].apply(
+                    self.tokenizer["trg"].pre_process, allow_empty=True
+                )
+            return df
+
+        except ImportError as e:
+            logger.error(e)
+            raise ImportError from e
+
+    def __getitem__(self, idx: Union[int, str]) -> Tuple[int, List[str], List[str]]:
+        """
+        lookup one item pair of the given index.
+
+        :param idx: index of the instance to lookup
+        :return:
+            - index  # needed to recover the original order
+            - speech features
+            - tokenized trg sentences
+        """
+        if idx > self.__len__():
+            raise KeyError
+
+        src, trg = None, None
+        src, _ = self.lookup_item(idx=idx, lang="src")
+        src = self.tokenizer["src"](src, is_train=self.split == "train")
+        if self.has_trg or self.has_prompt["trg"]:
+            trg = self.get_item(idx=idx, lang="trg")
+            if trg is None:
+                src = None
+        return idx, src, trg
+
+    @property
+    def src(self) -> List[str]:
+        return self.df["src"]
+
+
 class StreamDataset(BaseDataset):
     """
     StreamDataset which interacts with stream inputs.
@@ -539,7 +678,8 @@ class StreamDataset(BaseDataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
-        **kwargs
+        task: str = "MT",
+        **kwargs,
     ):
 
         super().__init__(
@@ -551,7 +691,8 @@ class StreamDataset(BaseDataset):
             has_prompt=has_prompt,
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
-            random_subset=random_subset
+            random_subset=random_subset,
+            task=task,
         )
 
         # place holder
@@ -631,7 +772,7 @@ class StreamDataset(BaseDataset):
             logger.error(idx, e)
             raise ValueError from e
 
-    def reset_cache(self):
+    def reset_cache(self) -> None:
         self.cache = []
         self.reset_indices()
 
@@ -646,6 +787,80 @@ class StreamDataset(BaseDataset):
             f"has_src_prompt={self.has_prompt[self.src_lang]}, "
             f"has_trg_prompt={self.has_prompt[self.trg_lang]})"
         )
+
+
+class SpeechStreamDataset(StreamDataset):
+    """
+    SpeechStreamDataset which interacts with audio file inputs.
+    """
+
+    def __init__(
+        self,
+        path: str,
+        src_lang: str = "src",
+        trg_lang: str = "trg",
+        split: str = "test",
+        has_trg: bool = False,
+        has_prompt: Dict[str, bool] = None,
+        tokenizer: Dict[str, Union[BasicTokenizer, SpeechProcessor]] = None,
+        sequence_encoder: Dict[str, Callable] = None,
+        random_subset: int = -1,
+        task: str = "S2T",
+        **kwargs,
+    ):
+        # pylint: disable=unused-argument
+        super().__init__(
+            path=path,
+            src_lang=src_lang,  # "src"
+            trg_lang=trg_lang,  # "trg"
+            split=split,
+            has_trg=has_trg,
+            has_prompt=has_prompt,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=random_subset,
+            task=task,
+        )
+        self.has_prompt["src"] = False
+        try:
+            assert isinstance(self.tokenizer["src"], SpeechProcessor)
+            self.tokenizer["src"].root_path = Path("")
+
+        except ImportError as e:
+            logger.error(e)
+            raise ImportError from e
+
+    def set_item(
+        self,
+        src_line: str,
+        trg_line: Optional[str] = None,
+        src_prompt: Optional[str] = None,
+        trg_prompt: Optional[str] = None
+    ) -> None:
+
+        assert Path(src_line).is_file(), \
+            f"{src_line} not found. Please provide the absolute path to the file!"
+
+        if trg_line is not None or trg_prompt is not None:
+            trg_line, trg_prompt = self._split_at_sep(
+                trg_line, trg_prompt, "trg", self.tokenizer["trg"].sep_token
+            )
+
+        self.cache.append((src_line, trg_line, None, trg_prompt))
+        self.reset_indices()
+
+    def __getitem__(self, idx: Union[int, str]) -> Tuple[int, List[str], List[str]]:
+        if idx > self.__len__():
+            raise KeyError
+
+        src, trg = None, None
+        src, _ = self.lookup_item(idx=idx, lang="src")
+        src = self.tokenizer["src"](src, is_train=False)
+        if self.has_trg or self.has_prompt["trg"]:
+            trg = self.get_item(idx=idx, lang="trg")
+            if trg is None:
+                src = None
+        return idx, src, trg
 
 
 class BaseHuggingfaceDataset(BaseDataset):
@@ -665,6 +880,7 @@ class BaseHuggingfaceDataset(BaseDataset):
         tokenizer: Dict[str, BasicTokenizer] = None,
         sequence_encoder: Dict[str, Callable] = None,
         random_subset: int = -1,
+        task: str = "MT",
         **kwargs,
     ):
         super().__init__(
@@ -677,6 +893,7 @@ class BaseHuggingfaceDataset(BaseDataset):
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
         )
         # load data
         self.dataset = self.load_data(path, **kwargs)
@@ -820,6 +1037,7 @@ def build_dataset(
     sequence_encoder: Dict = None,
     has_prompt: Dict = None,
     random_subset: int = -1,
+    task: str = "MT",
     **kwargs,
 ):
     """
@@ -835,6 +1053,7 @@ def build_dataset(
     :param sequence_encoder: encoding functions for both source and target
     :param has_prompt: prompt indicators
     :param random_subset: (int) number of random subset; -1 means no subsampling
+    :param task: (str)
     :return: loaded Dataset
     """
     dataset = None
@@ -857,6 +1076,7 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
             **kwargs,
         )
     elif dataset_type == "tsv":
@@ -870,19 +1090,54 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
+            **kwargs,
+        )
+    elif dataset_type == "speech":
+        assert task == "S2T", task
+        dataset = SpeechDataset(
+            path=path,
+            src_lang="src",
+            trg_lang="trg",
+            split=split,
+            has_trg=has_trg,
+            has_prompt=has_prompt,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=random_subset,
+            task=task,
             **kwargs,
         )
     elif dataset_type == "stream":
+        assert task == "MT", task
+        assert split == "test", split
         dataset = StreamDataset(
             path=path,
             src_lang=src_lang,
             trg_lang=trg_lang,
-            split="test",
+            split=split,
             has_trg=False,
             has_prompt=has_prompt,
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=-1,
+            task=task,
+            **kwargs,
+        )
+    elif dataset_type == "speech_stream":
+        assert task == "S2T", task
+        assert split == "test", split
+        dataset = SpeechStreamDataset(
+            path=None,
+            src_lang="src",
+            trg_lang="trg",
+            split=split,
+            has_trg=False,
+            has_prompt=has_prompt,
+            tokenizer=tokenizer,
+            sequence_encoder=sequence_encoder,
+            random_subset=-1,
+            task=task,
             **kwargs,
         )
     elif dataset_type == "huggingface":
@@ -898,6 +1153,7 @@ def build_dataset(
             tokenizer=tokenizer,
             sequence_encoder=sequence_encoder,
             random_subset=random_subset,
+            task=task,
             **kwargs,
         )
     else:

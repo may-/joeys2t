@@ -2,11 +2,14 @@ import random
 import unittest
 from types import SimpleNamespace
 
+import torch
+
 from joeynmt.data import load_data
 from joeynmt.tokenizers import (
     BasicTokenizer,
     FastBPETokenizer,
     SentencePieceTokenizer,
+    SpeechProcessor,
     SubwordNMTTokenizer,
 )
 
@@ -14,13 +17,10 @@ from joeynmt.tokenizers import (
 class TestTokenizer(unittest.TestCase):
 
     def setUp(self):
-        self.train_path = "test/data/toy/train"
-        self.dev_path = "test/data/toy/dev"
-
         # minimal data config
         self.data_cfg = {
-            "train": self.train_path,
-            "dev": self.dev_path,
+            "train": "test/data/toy/train",
+            "dev": "test/data/toy/dev",
             "src": {
                 "lang": "de",
                 "level": "word",
@@ -75,7 +75,9 @@ class TestTokenizer(unittest.TestCase):
                 current_cfg["src"]["lowercase"] = lowercase
                 current_cfg["trg"]["lowercase"] = lowercase
 
-                _, _, train_data, _, _ = load_data(current_cfg, datasets=["train"])
+                _, _, train_data, _, _ = load_data(
+                    current_cfg, datasets=["train"], task="MT"
+                )
                 for lang in [train_data.src_lang, train_data.src_lang]:
                     tokenizer = train_data.tokenizer[lang]
                     self.assertIs(type(tokenizer), BasicTokenizer)
@@ -137,7 +139,7 @@ class TestTokenizer(unittest.TestCase):
             }
         }
 
-        _, _, train_data, _, _ = load_data(cfg, datasets=["train"])
+        _, _, train_data, _, _ = load_data(cfg, datasets=["train"], task="MT")
 
         _, train_src, train_trg = train_data[6]
         for tokenized, lang in [(train_src, train_data.src_lang),
@@ -183,7 +185,7 @@ class TestTokenizer(unittest.TestCase):
             }
         }
 
-        _, _, train_data, _, _ = load_data(cfg, datasets=["train"])
+        _, _, train_data, _, _ = load_data(cfg, datasets=["train"], task="MT")
 
         _, train_src, train_trg = train_data[191]
         for tokenized, lang in [(train_src, train_data.src_lang),
@@ -227,7 +229,7 @@ class TestTokenizer(unittest.TestCase):
                 }
             }
 
-            _, _, train_data, _, _ = load_data(cfg, datasets=["train"])
+            _, _, train_data, _, _ = load_data(cfg, datasets=["train"], task="MT")
             _, train_src, train_trg = train_data[191]
 
             for tokenized, lang in [(train_src, train_data.src_lang),
@@ -246,6 +248,91 @@ class TestTokenizer(unittest.TestCase):
 
         except (ImportError, RuntimeError) as e:
             raise unittest.SkipTest(f"{e} Skip.")
+
+
+class TestSpeechProcessor(unittest.TestCase):
+
+    def setUp(self):
+
+        # minimal data config
+        self.data_cfg = {
+            "train": "test/data/speech/test",
+            "src": {
+                "lang": "en",
+                "level": "frame",
+                "num_freq": 80,
+                "max_length": 500,
+                "tokenizer_type": "speech",
+                "tokenizer_cfg": {
+                    "specaugment": {
+                        "freq_mask_n": 1,
+                        "freq_mask_f": 5,
+                        "time_mask_n": 1,
+                        "time_mask_t": 10,
+                        "time_mask_p": 1.0,
+                    },
+                    "cmvn": {
+                        "norm_means": True,
+                        "norm_vars": True,
+                        "before": True,
+                    },
+                },
+            },
+            "trg": {
+                "lang": "en",
+                "level": "char",
+                "lowercase": True,
+                "max_length": 50,
+                "voc_file": "test/data/speech/char.txt",
+            },
+            "dataset_type": "speech",
+            "special_symbols": SimpleNamespace(
+                **{
+                    "unk_token": "<unk>",
+                    "pad_token": "<pad>",
+                    "bos_token": "<s>",
+                    "eos_token": "</s>",
+                    "sep_token": None,
+                    "unk_id": 0,
+                    "pad_id": 1,
+                    "bos_id": 2,
+                    "eos_id": 3,
+                    "sep_id": None,
+                    "lang_tags": [],
+                }
+            ),
+        }
+
+        # set seed
+        seed = 42
+        random.seed(seed)
+
+    def testSpeechProcessor(self):
+        # load speech data
+        _, _, train_data, _, _ = load_data(
+            self.data_cfg, datasets=["train"], task="S2T"
+        )
+
+        # check tokenizer
+        tokenizer = train_data.tokenizer["src"]
+        self.assertIs(type(tokenizer), SpeechProcessor)
+
+        # take one train data point
+        _, train_src, train_trg = train_data[1]
+        train_src = torch.tensor(train_src[0, :10])
+
+        # src ... spectrogram
+        train_src_expected = torch.tensor([
+            -1.0788909, -1.0076448, -1.0421542, -1.0393586, -1.0239305,
+            -0.9921213, -0.95107234, -0.9340749, -0.9119267, -0.8962079,
+        ])  # yapf: disable
+        torch.testing.assert_close(train_src, train_src_expected, atol=1e-5, rtol=1e-5)
+
+        # trg ... char sequence
+        train_trg_expected = ['p', 'o', 'o', 'r', '▁', 'a', 'l', 'i', 'c', 'e', '!']
+        self.assertEqual(train_trg, train_trg_expected)
+
+        # TODO: test specaugment, cmvn
 
 
 class TestPrompt(unittest.TestCase):
@@ -297,7 +384,7 @@ class TestPrompt(unittest.TestCase):
         }
 
     def testToknizerWithPrompt(self):
-        _, _, _, dev_data, _ = load_data(self.data_cfg, datasets=["dev"])
+        _, _, _, dev_data, _ = load_data(self.data_cfg, datasets=["dev"], task="MT")
         self.assertEqual(len(dev_data), 40)
 
         expected = {

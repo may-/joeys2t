@@ -1,6 +1,7 @@
 name: "reverse_experiment"
 joeynmt_version: "2.3.0"
-model_dir: "reverse_model"
+task: "MT"
+model_dir: "models/reverse_model"
 use_cuda: False
 fp16: True
 random_seed: 42
@@ -34,6 +35,7 @@ data:
         eos_id: 3
 
 testing:
+    load_model: "models/reverse_model/latest.ckpt"
     n_best: 1
     beam_size: 1
     beam_alpha: 1.0
@@ -46,6 +48,7 @@ testing:
         tokenize: "13a"
 
 training:
+    load_model: "models/reverse_model/latest.ckpt"
     optimizer: "adamw"
     learning_rate: 0.001
     learning_rate_min: 0.0002

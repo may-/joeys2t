@@ -21,7 +21,7 @@ class TestXentLoss(unittest.TestCase):
             [[0.1, 0.1, 0.6, 0.1, 0.1], [0.1, 0.1, 0.6, 0.1, 0.1]],
             [[0.1, 0.1, 0.6, 0.1, 0.1], [0.1, 0.1, 0.6, 0.1, 0.1]],
             [[0.1, 0.1, 0.6, 0.1, 0.1], [0.1, 0.1, 0.6, 0.1, 0.1]],
-        ])
+        ])  # yapf: disable
 
         # batch x seq_len: 3 x 2
         targets = torch.LongTensor([[2, 1], [2, 0], [1, 0]])
@@ -48,7 +48,8 @@ class TestXentLoss(unittest.TestCase):
         self.assertEqual(torch.max(smoothed_targets), 1 - smoothing)
 
         # test the loss computation
-        v = criterion(predict.log(), **{"trg": targets})
+
+        v, = criterion(predict.log(), **{"trg": targets})
         self.assertAlmostEqual(v.item(), 2.1326, places=4)
 
     def test_no_label_smoothing(self):
@@ -61,7 +62,7 @@ class TestXentLoss(unittest.TestCase):
             [[0.1, 0.1, 0.6, 0.1, 0.1], [0.1, 0.1, 0.6, 0.1, 0.1]],
             [[0.1, 0.1, 0.6, 0.1, 0.1], [0.1, 0.1, 0.6, 0.1, 0.1]],
             [[0.1, 0.1, 0.6, 0.1, 0.1], [0.1, 0.1, 0.6, 0.1, 0.1]],
-        ])
+        ])  # yapf: disable
 
         # batch x seq_len: 3 x 2
         targets = torch.LongTensor([[2, 1], [2, 0], [1, 0]])
@@ -90,5 +91,5 @@ class TestXentLoss(unittest.TestCase):
             atol=1e-4,
         )
 
-        v = criterion(predict.log(), **{"trg": targets})
+        v, = criterion(predict.log(), **{"trg": targets})
         self.assertAlmostEqual(v.item(), 5.6268, places=4)

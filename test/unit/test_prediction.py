@@ -105,8 +105,8 @@ class TestPrediction(unittest.TestCase):
 
         # load data
         src_vocab, trg_vocab, _, _, self.test_data = load_data(
-            cfg["data"], datasets=["train", "test"]
-        )
+            cfg["data"], datasets=["train", "test"], task="MT",
+        )  # yapf: disable
 
         # build model
         self.model = build_model(cfg["model"], src_vocab=src_vocab, trg_vocab=trg_vocab)

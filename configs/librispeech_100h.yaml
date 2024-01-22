@@ -1,0 +1,137 @@
+name: "librispeech-100h"
+joeynmt_version: "2.3.0"
+task: "S2T"                     # task, either "MT" for machine translation, or "S2T" for speech-to-text
+model_dir: "models/librispeech100h" # directory where models and validation results are stored, required
+use_cuda: True                  # use CUDA for acceleration on GPU, required. Set to False when working on CPU.
+fp16: False                     # whether to use 16-bit half-precision training instead of 32-bit training.
+random_seed: 42                 # set this seed to make training deterministic
+
+data: # specify your data here
+    train: "data/LibriSpeech/joey_train-clean-100"      # training data
+    dev: "data/LibriSpeech/joey_dev-clean"        # development data for validation
+    test: "data/LibriSpeech/joey_test-clean"      # test data for testing final model; optional
+    dataset_type: "speech"
+    sample_dev_subset: 200
+    src:
+        lang: "en"
+        level: "frame"
+        num_freq: 80                # number of frequencies of audio inputs
+        min_length: 10              # filter out shorter audios from training (src)
+        max_length: 6000            # filter out longer audios from training (src)
+        tokenizer_type: "speech"    # invoke speech processor
+        tokenizer_cfg:
+            specaugment:
+                freq_mask_n: 2
+                freq_mask_f: 27
+                time_mask_n: 2
+                time_mask_t: 100
+                time_mask_p: 1.0
+            cmvn:
+                norm_means: True
+                norm_vars: True
+                before: True
+    trg:
+        lang: "en"
+        level: "bpe"              # segmentation level: either "word", "bpe" or "char"
+        lowercase: True           # lowercase the data, also for validation
+        max_length: 512           # filter out longer sentences from training (trg)
+        voc_min_freq: 1           # trg minimum frequency for a token to become part of the vocabulary
+        voc_limit: 5000           # trg vocabulary only includes this many most frequent tokens, default: unlimited
+        voc_file: "data/LibriSpeech/spm_train-clean-100_unigram5000.vocab"  # one token per line, line number is index
+        tokenizer_type: "sentencepiece"
+        tokenizer_cfg:
+            model_file: "data/LibriSpeech/spm_train-clean-100_unigram5000.model"  # sentence piece model path
+            pretokenizer: "none"
+    special_symbols:
+        unk_token: "<unk>"
+        unk_id: 0
+        pad_token: "<pad>"
+        pad_id: 1
+        bos_token: "<s>"
+        bos_id: 2
+        eos_token: "</s>"
+        eos_id: 3
+
+testing:                            # specify which inference algorithm to use for testing (for validation it's always greedy decoding)
+    #load_model: "models/librispeech100h/best.ckpt" # if given, load a trained model from this checkpoint
+    n_best: 1
+    beam_size: 20                   # size of the beam for beam search
+    beam_alpha: 1.0                 # length penalty for beam search
+    batch_size: 10000               # mini-batch size for evaluation (see batch_size above)
+    batch_type: "token"             # evaluation batch type ("sentence", default) or tokens ("token")
+    max_output_length: 100          # maximum output length for decoding, default: None. If set to None, allow sentences of max 1.5*src length
+    eval_metrics: ["wer"]           # validation metric, default: "bleu", other options: "chrf", "token_accuracy", "sequence_accuracy", "wer"
+    sacrebleu_cfg:
+        tokenize: "13a"
+
+training:                           # specify training details here
+    #load_model: "models/librispeech100h/latest.ckpt" # if given, load a pre-trained model from this checkpoint
+    reset_best_ckpt: False          # if True, reset the tracking of the best checkpoint and scores. Use for domain adaptation or fine-tuning with new metrics or dev data.
+    reset_scheduler: False          # if True, overwrite scheduler in loaded checkpoint with parameters specified in this config. Use for domain adaptation or fine-tuning.
+    reset_optimizer: False          # if True, overwrite optimizer in loaded checkpoint with parameters specified in this config. Use for domain adaptation or fine-tuning.
+    reset_iter_state: False         # if True, reset the random sampler in train data loader. ignored if shuffle = False
+    optimizer: "adamw"              # choices: "sgd", "adam", "adamw", "adadelta", "adagrad", "rmsprop", default is SGD
+    adam_betas: [0.9, 0.98]         # beta parameters for Adam. These are the defaults. Typically these are different for Transformer models.
+    scheduling: "warmupinversesquareroot"   # learning rate scheduling, optional, if not specified stays constant, options: "plateau", "exponential", "decaying", "noam" (for Transformer), "warmupexponentialdecay", "warmupinversesquareroot"
+    learning_rate: 2.0e-3           # initial learning rate, default: 3.0e-4
+    learning_rate_min: 1.0e-6       # stop learning when learning rate is reduced below this threshold, default: 1.0e-8
+    #learning_rate_factor: 0.5      # factor for Noam scheduler (used with Transformer)
+    learning_rate_warmup: 10000     # warmup steps for Noam scheduler (used with Transformer)
+    #clip_grad_val: 1.0             # for Transformer do not clip (so leave commented out)
+    clip_grad_norm: 10.0            # for Transformer do not clip (so leave commented out)
+    weight_decay: 0.                # l2 regularization, default: 0
+    batch_size: 20000               # mini-batch size as number of sentences (when batch_type is "sentence"; default) or total number of tokens (when batch_type is "token")
+    batch_type: "token"             # create batches with sentences ("sentence", default) or tokens ("token")
+    batch_multiplier: 4             # increase the effective batch size with values >1 to batch_multiplier*batch_size without increasing memory consumption by making updates only every batch_multiplier batches
+    normalization: "batch"          # loss normalization of a mini-batch, default: "batch" (by number of sequences in batch), other options: "tokens" (by number of tokens in batch), "none" (don't normalize, sum up loss)
+    epochs: 300                     # train for this many epochs
+    updates: 100000                 # train for this many updates (can be used for resumed process)
+    validation_freq: 1000           # validate after this many updates (number of mini-batches), default: 1000
+    logging_freq: 100               # log the training progress after this many updates, default: 100
+    early_stopping_metric: "wer"    # when a new high score on this metric is achieved, a checkpoint is written, when "eval_metric" (the first one in the list above) or "acc" is maximized, when "loss" or "ppl" is minimized
+    overwrite: False                # overwrite existing model directory, default: False. Do not set to True unless for debugging!
+    shuffle: True                   # shuffle the training data, default: True
+    print_valid_sents: [0, 1, 2]    # print this many validation sentences during each validation run, default: [0, 1, 2]
+    keep_best_ckpts: 10             # keep this many of the best checkpoints, if -1: all of them, default: 5
+    label_smoothing: 0.1            # label smoothing: reference tokens will have 1-label_smoothing probability instead of 1, rest of probability mass is uniformly distributed over the rest of the vocabulary, default: 0.0 (off)
+    loss: "crossentropy-ctc"        # loss function; one of {"crossentropy", "crossentropy-ctc"}
+    ctc_weight: 0.3                 # interpolation weight (used in "crossentropy-ctc" loss)
+
+model:                              # specify your model architecture here
+    initializer: "xavier_uniform"   # initializer for all trainable weights (xavier, zeros, normal, uniform)
+    init_gain: 1.0                  # gain for Xavier initializer (default: 1.0)
+    bias_initializer: "zeros"       # initializer for bias terms (xavier, zeros, normal, uniform)
+    embed_initializer: "xavier_uniform"  # initializer for embeddings (xavier, zeros, normal, uniform)
+    embed_init_gain: 1.0            # gain for Xavier initializer for embeddings (default: 1.0)
+    tied_embeddings: False          # tie src and trg embeddings, only applicable if vocabularies are the same, default: False
+    tied_softmax: False
+    encoder:
+        type: "transformer"         # encoder type: "recurrent" for LSTM or GRU, or "transformer" for a Transformer
+        num_layers: 16              # number of layers
+        num_heads: 4                # number of transformer heads
+        embeddings:
+            embedding_dim: 80       # must be same as "num_freq" in data section
+        hidden_size: 512            # size of hidden layer; must be divisible by number of heads
+        ff_size: 2048               # size of position-wise feed-forward layer
+        dropout: 0.1                # apply dropout to the inputs to the RNN, default: 0.0
+        freeze: False               # if True, encoder parameters are not updated during training (does not include embedding parameters)
+        subsample: True             # whether to use Conv1d subsampler
+        conv_kernel_sizes: [5, 5]   # sequence of kernel sizes in convolutional subsampler (comma-separated)
+        conv_channels: 512          # size of hidden layer in Conv1d subsampler
+        in_channels: 80             # must be same as "num_freq" in data section
+        layer_norm: "pre"
+        activation: "relu"
+    decoder:
+        type: "transformer"         # decoder type: "recurrent" for LSTM or GRU, or "transformer" for a Transformer
+        num_layers: 8               # number of layers
+        num_heads: 4                # number of transformer heads
+        embeddings:
+            embedding_dim: 512
+            scale: True
+            dropout: 0.1
+        hidden_size: 512            # size of hidden layer; must be divisible by number of heads
+        ff_size: 2048               # size of position-wise feed-forward layer
+        dropout: 0.1
+        freeze: False               # if True, decoder parameters are not updated during training (does not include embedding parameters, but attention)
+        layer_norm: "pre"
+        activation: "relu"
