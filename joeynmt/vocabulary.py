@@ -126,8 +126,8 @@ class Vocabulary:
             if skip_pad and i == self.pad_index:
                 continue
 
-            s = self._itos[i]  # decode back to token surface
-            sentence.append(s)
+            # decode back to token surface
+            sentence.append(self._itos[i])
 
             # break at the position AFTER eos
             if cut_at_eos and i == self.eos_index:
@@ -272,22 +272,30 @@ def _build_vocab(
     return vocab
 
 
-def build_vocab(cfg: Dict,
-                dataset: BaseDataset = None,
-                model_dir: Path = None) -> Tuple[Vocabulary, Vocabulary]:
+def build_vocab(
+    cfg: Dict,
+    task: str,
+    dataset: BaseDataset = None,
+    model_dir: Path = None
+) -> Tuple[Vocabulary, Vocabulary]:
     # use the vocab file saved in model_dir
-    if model_dir is not None and cfg["src"].get("voc_file", None) is None:
+    if task == "MT" and (
+        model_dir is not None and cfg["src"].get("voc_file", None) is None
+    ):
         assert (model_dir / "src_vocab.txt").is_file()
         cfg["src"]["voc_file"] = (model_dir / "src_vocab.txt").as_posix()
     if model_dir is not None and cfg["trg"].get("voc_file", None) is None:
         assert (model_dir / "trg_vocab.txt").is_file()
         cfg["trg"]["voc_file"] = (model_dir / "trg_vocab.txt").as_posix()
 
-    src_vocab = _build_vocab(cfg["src"], cfg["special_symbols"], dataset)
+    src_vocab = _build_vocab(
+        cfg["src"], cfg["special_symbols"], dataset
+    ) if task == "MT" else None
     trg_vocab = _build_vocab(cfg["trg"], cfg["special_symbols"], dataset)
 
-    assert src_vocab.pad_index == trg_vocab.pad_index
-    assert src_vocab.bos_index == trg_vocab.bos_index
-    assert src_vocab.eos_index == trg_vocab.eos_index
-    assert src_vocab.sep_index == trg_vocab.sep_index
+    if task == "MT":
+        assert src_vocab.pad_index == trg_vocab.pad_index
+        assert src_vocab.bos_index == trg_vocab.bos_index
+        assert src_vocab.eos_index == trg_vocab.eos_index
+        assert src_vocab.sep_index == trg_vocab.sep_index
     return src_vocab, trg_vocab

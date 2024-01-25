@@ -1,9 +1,10 @@
 name: "toy_experiment"              # name of experiment
 joeynmt_version: "2.3.0"            # joeynmt version
-model_dir: "toy_model"              # directory where models and validation results are stored, required
+task: "MT"                          # task, either "MT" for machine translation, or "S2T" for speech-to-text
+model_dir: "models/toy_model"              # directory where models and validation results are stored, required
 use_cuda: False                     # use CUDA for acceleration on GPU, required. Set to False when working on CPU.
-fp16: True                          # whether to use 16-bit half-precision training instead of 32-bit training. Used also for prediction.
-random_seed: 42                     # set this seed to make training and prediction deterministic.
+fp16: True                          # whether to use 16-bit half-precision training instead of 32-bit training.
+random_seed: 42                     # set this seed to make training deterministic
 
 data:
     train: "test/data/toy/train"    # training data path (If dataset_type="huggingface", `path` argument in huggingface's datasets.load_data() func)
@@ -70,6 +71,7 @@ data:
         #lang_tags: ["<de>", "<en>"] # language tags; Used for multi-task training
 
 testing:                            # specify which inference algorithm to use for testing (for validation it's always greedy decoding)
+    #load_model: "models/toy_model/60.ckpt" # if given, load a pre-trained model from this checkpoint
     n_best: 1                       # n_best size, must be smaller than or equal to beam_size
     beam_size: 5                    # size of the beam for beam search
     beam_alpha: 1.0                 # length penalty for beam search
@@ -87,7 +89,7 @@ testing:                            # specify which inference algorithm to use f
         tokenize: "13a"             # `tokenize` option in sacrebleu.metrics.BLEU() class (default: "13a")
 
 training:                           # specify training details here
-    #load_model: "toy_model/60.ckpt" # if given, load a pre-trained model from this checkpoint
+    #load_model: "models/toy_model/best.ckpt" # if given, load a pre-trained model from this checkpoint
     reset_best_ckpt: False          # if True, reset the tracking of the best checkpoint and scores. Use for domain adaptation or fine-tuning with new metrics or dev data.
     reset_scheduler: False          # if True, overwrite scheduler in loaded checkpoint with parameters specified in this config. Use for domain adaptation or fine-tuning.
     reset_optimizer: False          # if True, overwrite optimizer in loaded checkpoint with parameters specified in this config. Use for domain adaptation or fine-tuning.

@@ -20,7 +20,7 @@ class Batch:
     Input is yielded from `collate_fn()` called by torch.data.utils.DataLoader.
     """
 
-    # pylint: disable=too-many-instance-attributes
+    # pylint: disable=too-many-instance-attributes, too-many-arguments
 
     def __init__(
         self,
@@ -28,12 +28,14 @@ class Batch:
         src_length: Tensor,
         src_prompt_mask: Optional[Tensor],
         trg: Optional[Tensor],
+        trg_length: Optional[Tensor],
         trg_prompt_mask: Optional[Tensor],
         indices: Tensor,
         device: torch.device,
         pad_index: int,
         eos_index: int,
         is_train: bool = True,
+        task: str = "MT",
     ):
         """
         Creates a new joey batch. This batch supports attributes with src and trg
@@ -44,18 +46,22 @@ class Batch:
         :param src_length: shape (batch_size,)
         :param src_prompt_mask: shape (batch_size, max_src_len)
         :param trg: shape (batch_size, max_trg_len)
+        :param trg_length: shape (batch_size,)
         :param trg_prompt_mask: shape (batch_size, max_trg_len)
+        :param indices:
         :param device:
         :param pad_index: *must be the same for both src and trg
         :param eos_index:
         :param is_train: *can be used for online data augmentation, subsampling etc.
+        :param task: task
         """
         self.src: Tensor = src
         self.src_length: Tensor = src_length
-        self.src_mask: Tensor = (self.src != pad_index).unsqueeze(1)
+        self.src_mask: Optional[Tensor] = None
         self.src_prompt_mask: Optional[Tensor] = None  # equivalent to `token_type_ids`
         self.trg_input: Optional[Tensor] = None
         self.trg: Optional[Tensor] = None
+        self.trg_length: Optional[Tensor] = None
         self.trg_mask: Optional[Tensor] = None
         self.trg_prompt_mask: Optional[Tensor] = None
         self.indices: Tensor = indices
@@ -64,17 +70,21 @@ class Batch:
         self.ntokens: Optional[Tensor] = None
         self.has_trg: bool = trg is not None
         self.is_train: bool = is_train
+        if self.is_train:
+            assert self.has_trg
 
         if src_prompt_mask is not None:
             self.src_prompt_mask = src_prompt_mask
 
         if self.has_trg:
+            assert trg is not None and trg_length is not None
             # trg_input is used for teacher forcing, last one (EOS) is cut off
             has_eos = torch.any(trg == eos_index).item()  # true in training
             trg_input = torch.where(trg == eos_index, pad_index, trg)
             self.trg_input: Tensor = trg_input[:, :-1] if has_eos else trg_input
             # trg is used for loss computation, shifted by one since BOS
             self.trg: Tensor = trg[:, 1:]  # trg: shape (batch_size, trg_len)
+            self.trg_length: Tensor = trg_length - 1
             # we exclude the padded areas (and blank areas) from the loss computation
             # `trg_mask` shape (batch_size, 1, trg_len); passed to attention layers
             self.trg_mask: Tensor = (self.trg != pad_index).unsqueeze(1)
@@ -88,6 +98,16 @@ class Batch:
         if device.type == "cuda":
             self._make_cuda(device)
 
+        self.task: str = task
+        if self.task == "MT":
+            self.src_mask: Tensor = (self.src != pad_index).unsqueeze(1)
+        elif self.task == "S2T":
+            # Note: src_mask will be re-constructed in TransformerEncoder
+            self.src_max_len: int = self.src.size(1)
+            # if multi-gpu, re-pad src so that all seqs in parallel gpus
+            # have the same length!
+            self.repad: bool = torch.cuda.device_count() > 1
+
         # a batch has to contain more than one src sentence
         assert self.nseqs > 0, self.nseqs
 
@@ -95,7 +115,9 @@ class Batch:
         """Move the batch to GPU"""
         self.src = self.src.to(device)
         self.src_length = self.src_length.to(device)
-        self.src_mask = self.src_mask.to(device)
+
+        if self.src_mask is not None:  # if self.task == "MT":
+            self.src_mask = self.src_mask.to(device)
         self.indices = self.indices.to(device)
 
         if self.src_prompt_mask is not None:
@@ -104,6 +126,7 @@ class Batch:
         if self.has_trg:
             self.trg_input = self.trg_input.to(device)
             self.trg = self.trg.to(device)
+            self.trg_length = self.trg_length.to(device)
             self.trg_mask = self.trg_mask.to(device)
 
             if self.trg_prompt_mask is not None:
@@ -164,7 +187,9 @@ class Batch:
 
         self.src = self.src[perm_index]
         self.src_length = self.src_length[perm_index]
-        self.src_mask = self.src_mask[perm_index]
+
+        if self.src_mask is not None:  # if task != "S2T"
+            self.src_mask = self.src_mask[perm_index]
         self.indices = self.indices[perm_index]
 
         if self.src_prompt_mask is not None:
@@ -173,6 +198,7 @@ class Batch:
         if self.has_trg:
             self.trg_input = self.trg_input[perm_index]
             self.trg_mask = self.trg_mask[perm_index]
+            self.trg_length = self.trg_length[perm_index]
             self.trg = self.trg[perm_index]
 
             if self.trg_prompt_mask is not None:

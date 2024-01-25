@@ -1,5 +1,6 @@
 name: "wmt17_ende_sp"
-joeynmt_version: "2.0.0"
+joeynmt_version: "2.3.0"
+task: "MT"
 model_dir: "models/wmt17_ende_sp"
 use_cuda: True
 random_seed: 42
@@ -28,7 +29,7 @@ data:
             model_type: "unigram"
             character_coverage: 1.0
             nbest_size: 10
-            alpha: 0.1
+            alpha: 0.9
             pretokenizer: "moses"
     trg:
         lang: "de"
@@ -45,7 +46,7 @@ data:
             model_type: "unigram"
             character_coverage: 1.0
             nbest_size: 10
-            alpha: 0.1
+            alpha: 0.9
             pretokenizer: "moses"
     special_symbols:
         unk_token: "<unk>"

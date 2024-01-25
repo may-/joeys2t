@@ -23,7 +23,7 @@ from joeynmt.config import (
     set_validation_args,
 )
 from joeynmt.data import load_data
-from joeynmt.datasets import StreamDataset
+from joeynmt.datasets import SpeechStreamDataset, StreamDataset
 from joeynmt.helpers import (
     expand_reverse_index,
     load_checkpoint,
@@ -40,9 +40,10 @@ from joeynmt.helpers_for_ddp import (
     get_logger,
     use_ddp,
 )
-from joeynmt.metrics import bleu, chrf, sequence_accuracy, token_accuracy
+from joeynmt.metrics import bleu, chrf, sequence_accuracy, token_accuracy, wer
 from joeynmt.model import DataParallelWrapper, Model, build_model
 from joeynmt.search import search
+from joeynmt.tokenizers import EvaluationTokenizer
 
 logger = get_logger(__name__)
 
@@ -271,51 +272,104 @@ def predict(
             assert normalizer > 0, normalizer
             assert total_ntokens > 0, total_ntokens
 
-            # normalized loss
-            valid_scores["loss"] = total_loss / normalizer
-            # accuracy before decoding
-            valid_scores["acc"] = total_n_correct / total_ntokens
-            # exponent of token-level negative log likelihood
-            valid_scores["ppl"] = math.exp(total_loss / total_ntokens)
+    # decode ids back to str symbols (cut-off AFTER eos; eos itself is included.)
+    decoded_valid = model.trg_vocab.arrays_to_sentences(
+        arrays=all_outputs, cut_at_eos=True
+    )
+    # TODO: `valid_seq_scores` should have the same seq length as `decoded_valid`
+    #     -> needed to be cut-off at eos synchronously
 
-        # decode ids back to str symbols (cut-off AFTER eos; eos itself is included.)
-        decoded_valid = model.trg_vocab.arrays_to_sentences(
-            arrays=all_outputs, cut_at_eos=True
+    if args.return_prob == "ref":  # no evaluation needed
+        logger.info(
+            "Evaluation result (scoring) %s, duration: %.4f[sec]",
+            ", ".join([
+                f"{eval_metric}: {valid_scores[eval_metric]:6.2f}"
+                for eval_metric in ["loss", "ppl", "acc"]
+            ]),
+            gen_duration,
         )
-        # TODO: `valid_seq_scores` should have the same seq length as `decoded_valid`
-        #     -> needed to be cut-off at eos/sep synchronously
+        return (
+            valid_scores,
+            None,  # valid_ref
+            None,  # valid_hyp
+            decoded_valid,
+            valid_seq_scores,
+            valid_attn_scores,
+        )
 
-        if args.return_prob == "ref":  # no evaluation needed
-            logger.info(
-                "Evaluation result (scoring) %s.", ", ".join([
-                    f"{eval_metric}: {valid_scores[eval_metric]:6.2f}"
-                    for eval_metric in ["loss", "ppl", "acc"]
-                ])
-            )
-            return (
-                valid_scores, None, None, decoded_valid, valid_seq_scores,
-                valid_attn_scores
-            )
+    # retrieve detokenized hypotheses and references
+    valid_hyp = [
+        data.tokenizer[data.trg_lang].post_process(s, generate_unk=args.generate_unk)
+        for s in decoded_valid
+    ]
+    # references are not length-filtered, not duplicated for n_best > 1
+    valid_ref = [data.tokenizer[data.trg_lang].post_process(s) for s in data.trg]
 
-        # retrieve detokenized hypotheses
-        valid_hyp = []
-        for i, sentence in enumerate(decoded_valid):
-            try:
-                sentence = data.tokenizer[data.trg_lang].post_process(
-                    sentence, generate_unk=args.generate_unk, cut_at_sep=True
+    # if references are given, evaluate 1best generation against them
+    if data.has_trg:
+        valid_hyp_1best = (
+            valid_hyp if args.n_best == 1 else
+            [valid_hyp[i] for i in range(0, len(valid_hyp), args.n_best)]
+        )
+        assert len(valid_hyp_1best) == len(valid_ref), (valid_hyp_1best, valid_ref)
+
+        eval_start_time = time.time()
+
+        # evaluate with metrics on full dataset
+        for eval_metric in args.eval_metrics:
+            if eval_metric == "bleu":
+                valid_scores[eval_metric] = bleu(
+                    valid_hyp_1best,
+                    valid_ref,  # detokenized ref
+                    **args.sacrebleu_cfg,
                 )
-            except AssertionError as e:
-                logger.error("empty hypothesis at %d: %r (%r)", i, sentence, e)
-                # pylint: disable=protected-access
-                sentence = model.trg_vocab._itos[model.unk_index]
-            valid_hyp.append(sentence)
-        assert len(valid_hyp) == len(all_outputs), (len(valid_hyp), len(all_outputs))
+            elif eval_metric == "chrf":
+                valid_scores[eval_metric] = chrf(
+                    valid_hyp_1best,
+                    valid_ref,  # detokenized ref
+                    **args.sacrebleu_cfg,
+                )
+            elif eval_metric == "token_accuracy":
+                decoded_valid_1best = (
+                    decoded_valid if args.n_best == 1 else [
+                        decoded_valid[i]
+                        for i in range(0, len(decoded_valid), args.n_best)
+                    ]
+                )
+                valid_scores[eval_metric] = token_accuracy(
+                    decoded_valid_1best,
+                    data.get_list(lang=data.trg_lang, tokenized=True),  # tokenized ref
+                )
+            elif eval_metric == "sequence_accuracy":
+                valid_scores[eval_metric] = sequence_accuracy(
+                    valid_hyp_1best, valid_ref
+                )
+            elif eval_metric == "wer":
+                if "eval" not in data.tokenizer:  # better to handle this in data.py?
+                    data.tokenizer["eval"] = EvaluationTokenizer(
+                        lowercase=args.sacrebleu_cfg.get("lowercase", False),
+                        tokenize=args.sacrebleu_cfg.get("tokenize", "13a"),
+                        no_punc=args.sacrebleu_cfg.get("no_punc", False)
+                    )
+                valid_scores[eval_metric] = wer(
+                    valid_hyp_1best, valid_ref, data.tokenizer["eval"]
+                )
 
-        # if references are given, compute evaluation metrics
-        if data.has_trg:
-            valid_scores, valid_ref = evaluate(valid_scores, valid_hyp, data, args)
-        else:
-            valid_ref = None  # no references
+        eval_duration = time.time() - eval_start_time
+        score_str = ", ".join([
+            f"{eval_metric}: {valid_scores[eval_metric]:6.2f}"
+            for eval_metric in args.eval_metrics + ["loss", "ppl", "acc"]
+            if not math.isnan(valid_scores[eval_metric])
+        ])
+        logger.info(
+            "Evaluation result (%s) %s, generation: %.4f[sec], evaluation: %.4f[sec]",
+            "beam search" if args.beam_size > 1 else "greedy",
+            score_str,
+            gen_duration,
+            eval_duration,
+        )
+    else:
+        logger.info("Generation took %.4f[sec]. (No references given)", gen_duration)
 
     return (
         valid_scores,
@@ -403,20 +457,26 @@ def prepare(args: BaseConfig, rank: int,
         datasets = ["stream"]
 
     if mode != "train":
-        if "voc_file" not in args.data["src"] or not args.data["src"]["voc_file"]:
+        if (
+            args.task == "MT" and (
+                "voc_file" not in args.data["src"]  # yapf: disable
+                or not args.data["src"]["voc_file"]
+            )
+        ):
             args.data["src"]["voc_file"] = (args.model_dir / "src_vocab.txt").as_posix()
         if "voc_file" not in args.data["trg"] or not args.data["trg"]["voc_file"]:
             args.data["trg"]["voc_file"] = (args.model_dir / "trg_vocab.txt").as_posix()
 
     src_vocab, trg_vocab, train_data, dev_data, test_data = load_data(
-        cfg=args.data, datasets=datasets
+        cfg=args.data, datasets=datasets, task=args.task
     )
 
     if mode == "train" and rank == 0:
         # store the vocabs and tokenizers
-        src_vocab.to_file(args.model_dir / "src_vocab.txt")
-        if hasattr(train_data.tokenizer[train_data.src_lang], "copy_cfg_file"):
-            train_data.tokenizer[train_data.src_lang].copy_cfg_file(args.model_dir)
+        if args.task == "MT":
+            src_vocab.to_file(args.model_dir / "src_vocab.txt")
+            if hasattr(train_data.tokenizer[train_data.src_lang], "copy_cfg_file"):
+                train_data.tokenizer[train_data.src_lang].copy_cfg_file(args.model_dir)
         trg_vocab.to_file(args.model_dir / "trg_vocab.txt")
         if hasattr(train_data.tokenizer[train_data.trg_lang], "copy_cfg_file"):
             train_data.tokenizer[train_data.trg_lang].copy_cfg_file(args.model_dir)
@@ -425,7 +485,9 @@ def prepare(args: BaseConfig, rank: int,
     model = build_model(args.model, src_vocab=src_vocab, trg_vocab=trg_vocab)
     model.log_parameters_list()
     # need to instantiate loss func after `build_model()`
-    model.loss_function = (args.train.loss, args.train.label_smoothing)
+    model.loss_function = (
+        args.train.loss, args.train.label_smoothing, args.train.ctc_weight
+    )
 
     if mode != "train":
         # infer ckpt path for testing
@@ -491,13 +553,13 @@ def test(
     # check options
     if save_attention:
         if cfg["model"]["decoder"]["type"] == "transformer":
-            assert cfg["testing"].get("beam_size", 1) == 1, (
+            assert args.test.beam_size == 1, (
                 "Attention plots can be saved with greedy decoding only. Please set "
                 "`beam_size: 1` in the config."
             )
         args = args._replace(test=args.test._replace(return_attention=True))
     if save_scores:
-        assert output_path, "Please specify --output_path for saving scores."
+        assert output_path, "Please specify --output-path for saving scores."
         if args.test.return_prob == "none":
             logger.warning(
                 "Please specify prob type: {`ref` or `hyp`} in the config. "
@@ -505,12 +567,12 @@ def test(
             )
             save_scores = False
         elif args.test.return_prob == "ref":
-            assert cfg["testing"].get("beam_size", 1) == 1, (
+
+            assert args.test.beam_size == 1, (
                 "Scores of given references can be computed with greedy decoding only. "
                 "Please set `beam_size: 1` in the config."
             )
 
-    # prediction loop over datasets
     for data_set_name, data_set in data_to_predict.items():
         if data_set is not None:
             data_set.reset_indices(random_subset=-1)  # no subsampling in evaluation
@@ -534,8 +596,8 @@ def test(
                 autocast=args.autocast,
             )
 
-            if save_attention:
-                if att_scores:
+            if output_path is not None:
+                if save_attention and att_scores is not None:
                     attention_file_name = f"{output_path}.{data_set_name}.att"
                     logger.info("Saving attention plots. This might take a while..")
                     store_attention_plots(
@@ -548,14 +610,13 @@ def test(
                         output_prefix=attention_file_name,
                     )
                     logger.info("Attention plots saved to: %s", attention_file_name)
-                else:
+                elif save_attention and att_scores is None:
                     logger.warning(
                         "Attention scores could not be saved. Note that attention "
                         "scores are not available when using beam search. "
                         "Set beam_size to 1 for greedy decoding."
                     )
 
-            if output_path is not None:
                 if save_scores and seq_scores is not None:
                     # save scores
                     output_path_scores = Path(f"{output_path}.{data_set_name}.scores")
@@ -577,20 +638,22 @@ def test(
 def translate(cfg: Dict, output_path: str = None) -> None:
     """
     Interactive translation function.
-    Loads model from checkpoint and translates either the stdin input or asks for
+    Loads model from a checkpoint and translates either the stdin input or asks for
     input to translate interactively. Translations and scores are printed to stdout.
     Note: The input sentences don't have to be pre-tokenized.
 
     :param cfg: configuration dict
-    :param output_path: path to output file
+    :param output_path: path to the output file
     """
-
     # parse args
-    args = parse_global_args(cfg, rank=0, mode="translate")
+    args = parse_global_args(cfg, rank=0, mode="test")
 
     # load the model
     model, _, _, test_data = prepare(args, rank=0, mode="translate")
-    assert isinstance(test_data, StreamDataset)
+    if args.task == "MT":
+        assert isinstance(test_data, StreamDataset)
+    elif args.task == "S2T":
+        assert isinstance(test_data, SpeechStreamDataset)
 
     logger.info(
         "Ready to decode. (device: %s, n_gpu: %s, use_ddp: %r, fp16: %r)",

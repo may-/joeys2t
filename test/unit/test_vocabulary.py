@@ -139,7 +139,9 @@ class TestVocabulary(unittest.TestCase):
         # pylint: enable=protected-access
 
     def testVocabularyFromDataset(self):
-        src_vocab, trg_vocab, _, _, _ = load_data(self.cfg, datasets=["train"])
+        src_vocab, trg_vocab, _, _, _ = load_data(
+            self.cfg, datasets=["train"], task="MT"
+        )
         self.assertEqual(
             len(src_vocab), self.voc_limit + len(self.specials + self.lang_tags)
         )
@@ -178,7 +180,7 @@ class TestVocabulary(unittest.TestCase):
             [2, 7, 13, 20, 17, 18, 12, 26, 23, 24, 14, 10, 16, 26, 22, 19, 18, 15,
              9, 25, 11, 21, 3],
             [2, 8, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ]   # yapf: disable
+        ]  # yapf: disable
         expected_prompt = [
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],

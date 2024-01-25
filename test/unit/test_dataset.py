@@ -69,7 +69,7 @@ class TestPlaintextDataset(unittest.TestCase):
                     datasets.remove("test")
 
             _, _, train_data, dev_data, test_data = load_data(
-                current_cfg, datasets=datasets
+                current_cfg, datasets=datasets, task="MT"
             )
 
             self.assertIs(type(train_data), PlaintextDataset)
@@ -210,6 +210,7 @@ class TestTsvDataset(unittest.TestCase):
                 "min_length": self.min_length,
             },
             "dataset_type": "tsv",
+            "sample_train_subset": 100,
             "special_symbols": SimpleNamespace(
                 **{
                     "unk_token": "<unk>",
@@ -245,7 +246,7 @@ class TestTsvDataset(unittest.TestCase):
             expected_train_len, after_filtering = 1000, 290
             expected_dev_len = 20
             _, _, train_data, dev_data, _ = load_data(
-                self.data_cfg, datasets=["train", "dev"]
+                self.data_cfg, datasets=["train", "dev"], task="MT"
             )
 
             self.assertIs(type(train_data), TsvDataset)

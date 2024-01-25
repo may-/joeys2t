@@ -57,6 +57,7 @@ def main():
             Path(cfg["model_dir"]), overwrite=cfg["training"].get("overwrite", False)
         )
     model_dir = _check_path(cfg["model_dir"], allow_empty=False)
+
     if args.mode == "train":
         # store a copy of original training config in model dir
         # (called in __main__.py, because `args.config_path` is accessible here.)
