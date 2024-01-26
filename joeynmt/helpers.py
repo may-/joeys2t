@@ -4,6 +4,7 @@ Collection of helper functions
 """
 import copy
 import functools
+import importlib.metadata
 import operator
 import random
 import re
@@ -13,7 +14,6 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import importlib_metadata
 import numpy as np
 import packaging.version
 import torch
@@ -52,7 +52,7 @@ def check_version(cfg_version: str = None) -> str:
     :param cfg_version: version number specified in config
     :return: package version number string
     """
-    pkg_version = importlib_metadata.version("joeynmt")
+    pkg_version = importlib.metadata.version("joeynmt")
 
     joeynmt_version = packaging.version.parse(pkg_version)
     if cfg_version is not None:
