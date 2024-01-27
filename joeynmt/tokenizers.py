@@ -21,6 +21,7 @@ class BasicTokenizer:
     # pylint: disable=too-many-instance-attributes
     SPACE = chr(32)  # ' ': half-width white space (ascii)
     SPACE_ESCAPE = chr(9601)  # '▁': sentencepiece default
+    UNK_SURFACE = chr(8263)  # `⁇`: sentencepiece default
 
     def __init__(
         self,
@@ -157,7 +158,10 @@ class BasicTokenizer:
             sequence = remove_extra_spaces(sequence)
 
         # ensure the string is not empty.
-        assert sequence is not None and len(sequence) > 0, sequence
+        # assert sequence is not None and len(sequence) > 0, sequence
+        sequence = sequence.replace(self.unk_token, self.UNK_SURFACE)
+        if sequence is None or len(sequence) == 0:
+            sequence = self.UNK_SURFACE
         return sequence
 
     def set_vocab(self, vocab) -> None:
@@ -252,7 +256,10 @@ class SentencePieceTokenizer(BasicTokenizer):
             sequence = remove_extra_spaces(sequence)
 
         # ensure the string is not empty.
-        assert sequence is not None and len(sequence) > 0, sequence
+        # assert sequence is not None and len(sequence) > 0, sequence
+        sequence = sequence.replace(self.unk_token, self.UNK_SURFACE)
+        if sequence is None or len(sequence) == 0:
+            sequence = self.UNK_SURFACE
         return sequence
 
     def set_vocab(self, vocab) -> None:
@@ -359,7 +366,10 @@ class SubwordNMTTokenizer(BasicTokenizer):
             sequence = remove_extra_spaces(sequence)
 
         # ensure the string is not empty.
-        assert sequence is not None and len(sequence) > 0, sequence
+        # assert sequence is not None and len(sequence) > 0, sequence
+        sequence = sequence.replace(self.unk_token, self.UNK_SURFACE)
+        if sequence is None or len(sequence) == 0:
+            sequence = self.UNK_SURFACE
         return sequence
 
     def set_vocab(self, vocab) -> None:
