@@ -167,6 +167,7 @@ class BasicTokenizer:
     def set_vocab(self, vocab) -> None:
         """
         Set vocab
+
         :param vocab: (Vocabulary)
         """
         # pylint: disable=attribute-defined-outside-init

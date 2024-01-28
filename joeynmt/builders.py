@@ -251,8 +251,9 @@ def build_scheduler(
 
 
 class BaseScheduler:
-    """Base LR Scheduler
-    decay at "step"
+    """
+    Base LR Scheduler
+    - decay at "step"
     """
 
     def __init__(self, optimizer: torch.optim.Optimizer):
@@ -264,18 +265,18 @@ class BaseScheduler:
         self._rate = 0
         self._state_dict = {"step": self._step, "rate": self._rate}
 
-    def state_dict(self):
+    def state_dict(self) -> Dict:
         """Returns dictionary of values necessary to reconstruct scheduler"""
         self._state_dict["step"] = self._step
         self._state_dict["rate"] = self._rate
         return self._state_dict
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict) -> None:
         """Given a state_dict, this function loads scheduler's state"""
         self._step = state_dict["step"]
         self._rate = state_dict["rate"]
 
-    def step(self, step):
+    def step(self, step) -> None:
         """Update parameters and rate"""
         self._step = step + 1  # sync with trainer.stats.steps
         rate = self._compute_rate()
@@ -290,7 +291,11 @@ class BaseScheduler:
 class NoamScheduler(BaseScheduler):
     """
     The Noam learning rate scheduler used in "Attention is all you need"
-    See Eq. 3 in https://arxiv.org/abs/1706.03762
+
+    .. seealso::
+
+        Eq. 3 in https://arxiv.org/abs/1706.03762
+
     """
 
     def __init__(
@@ -313,13 +318,13 @@ class NoamScheduler(BaseScheduler):
         self.factor = factor
         self.hidden_size = hidden_size
 
-    def _compute_rate(self):
+    def _compute_rate(self) -> float:
         """Implement `lrate` above"""
         step = self._step
         upper_bound = min(step**(-0.5), step * self.warmup**(-1.5))
         return self.factor * (self.hidden_size**(-0.5) * upper_bound)
 
-    def state_dict(self):
+    def state_dict(self) -> Dict:
         """Returns dictionary of values necessary to reconstruct scheduler"""
         super().state_dict()
         self._state_dict["warmup"] = self.warmup
@@ -327,7 +332,7 @@ class NoamScheduler(BaseScheduler):
         self._state_dict["hidden_size"] = self.hidden_size
         return self._state_dict
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict) -> None:
         """Given a state_dict, this function loads scheduler's state"""
         super().load_state_dict(state_dict)
         self.warmup = state_dict["warmup"]
@@ -374,7 +379,7 @@ class WarmupExponentialDecayScheduler(BaseScheduler):
         self.decay_rate = decay_rate
         self.min_rate = min_rate
 
-    def _compute_rate(self):
+    def _compute_rate(self) -> float:
         """Implement `lrate` above"""
         step = self._step
         warmup = self.warmup
@@ -386,7 +391,7 @@ class WarmupExponentialDecayScheduler(BaseScheduler):
             rate = self.peak_rate * (self.decay_rate**exponent)
         return max(rate, self.min_rate)
 
-    def state_dict(self):
+    def state_dict(self) -> Dict:
         """Returns dictionary of values necessary to reconstruct scheduler"""
         super().state_dict()
         self._state_dict["warmup"] = self.warmup
@@ -396,7 +401,7 @@ class WarmupExponentialDecayScheduler(BaseScheduler):
         self._state_dict["min_rate"] = self.min_rate
         return self._state_dict
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict) -> None:
         """Given a state_dict, this function loads scheduler's state"""
         super().load_state_dict(state_dict)
         self.warmup = state_dict["warmup"]
@@ -420,11 +425,16 @@ class WarmupInverseSquareRootScheduler(BaseScheduler):
     Decay the LR based on the inverse square root of the update number.
     In the warmup phase, we linearly increase the learning rate.
     After warmup, we decrease the learning rate as follows:
-    ```
-    decay_factor = peak_rate * sqrt(warmup) # constant value
-    lr = decay_factor / sqrt(step)
-    ```
-    cf.) https://github.com/pytorch/fairseq/blob/main/fairseq/optim/lr_scheduler/inverse_square_root_schedule.py
+
+    .. code-block:: python
+
+        decay_factor = peak_rate * sqrt(warmup) # constant value
+        lr = decay_factor / sqrt(step)
+
+    .. seealso::
+
+        https://github.com/pytorch/fairseq/blob/main/fairseq/optim/lr_scheduler/inverse_square_root_schedule.py
+
     """  # noqa
 
     def __init__(
@@ -447,7 +457,7 @@ class WarmupInverseSquareRootScheduler(BaseScheduler):
         self.peak_rate = peak_rate
         self.decay_rate = peak_rate * (warmup**0.5)  # constant value
 
-    def _compute_rate(self):
+    def _compute_rate(self) -> float:
         """Implement `lrate` above"""
         step = self._step
         warmup = self.warmup
@@ -460,7 +470,7 @@ class WarmupInverseSquareRootScheduler(BaseScheduler):
             rate = self.decay_rate * (step**-0.5)
         return max(rate, self.min_rate)
 
-    def state_dict(self):
+    def state_dict(self) -> Dict:
         """Returns dictionary of values necessary to reconstruct scheduler"""
         super().state_dict()
         self._state_dict["warmup"] = self.warmup
@@ -469,7 +479,7 @@ class WarmupInverseSquareRootScheduler(BaseScheduler):
         self._state_dict["min_rate"] = self.min_rate
         return self._state_dict
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict) -> None:
         """Given a state_dict, this function loads scheduler's state"""
         super().load_state_dict(state_dict)
         self.warmup = state_dict["warmup"]

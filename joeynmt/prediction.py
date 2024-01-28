@@ -17,11 +17,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from joeynmt.config import (
-    BaseConfig,
-    TestConfig,
-    parse_global_args,
-)
+from joeynmt.config import BaseConfig, TestConfig, parse_global_args
 from joeynmt.data import load_data
 from joeynmt.datasets import StreamDataset
 from joeynmt.helpers import (
@@ -325,7 +321,7 @@ def predict(
             sentence = data.tokenizer[data.trg_lang].post_process(
                 sentence, generate_unk=args.generate_unk, cut_at_sep=True
             )
-            if sentence = data.tokenizer[data.trg_lang].UNK_SURFACE:
+            if sentence == data.tokenizer[data.trg_lang].UNK_SURFACE:
                 logger.error("empty hypothesis at %d: %r (%r)", i, sentence)
             valid_hyp.append(sentence)
         assert len(valid_hyp) == len(all_outputs), (len(valid_hyp), len(all_outputs))
@@ -626,12 +622,15 @@ def test(
 
     ddp_cleanup()
 
+
 def translate(cfg: Dict, output_path: str = None) -> None:
     """
     Interactive translation function.
     Loads model from checkpoint and translates either the stdin input or asks for
     input to translate interactively. Translations and scores are printed to stdout.
-    Note: The input sentences don't have to be pre-tokenized.
+
+    .. note::
+        The input sentences don't have to be pre-tokenized.
 
     :param cfg: configuration dict
     :param output_path: path to output file
