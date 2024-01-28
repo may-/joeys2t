@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from joeynmt.data import load_data
 from joeynmt.tokenizers import (
     BasicTokenizer,
+    FastBPETokenizer,
     SentencePieceTokenizer,
     SubwordNMTTokenizer,
 )
@@ -203,6 +204,49 @@ class TestTokenizer(unittest.TestCase):
             dropout = tokenizer(detokenized, is_train=True)
             self.assertEqual(dropout, expected[lang]['dropout'])
 
+    def testFastBPETokenizer(self):
+        try:
+            cfg = self.data_cfg.copy()
+            for side in ["src", "trg"]:
+                cfg[side]["max_length"] = 30
+                cfg[side]["level"] = "bpe"
+                cfg[side]["tokenizer_type"] = "fastbpe"
+                cfg[side]["tokenizer_cfg"] = {"codes": "test/data/toy/bpe200.codes"}
+                cfg[side]["voc_file"] = "test/data/toy/bpe200.txt"
+
+            # 191st example from the training set
+            expected = {
+                "de": {
+                    "tokenized": ['D@@', 'an@@', 'k@@', 'e.'],
+                    "dropout": ['D@@', 'a@@', 'n@@', 'k@@', 'e@@', '.'],
+                    "detokenized": "Danke.",
+                }, "en": {
+                    "tokenized": ['Th@@', 'an@@', 'k', 'y@@', 'ou@@', '.'],
+                    "dropout": ['T@@', 'ha@@', 'n@@', 'k', 'y@@', 'o@@', 'u@@', '.'],
+                    "detokenized": "Thank you.",
+                }
+            }
+
+            _, _, train_data, _, _ = load_data(cfg, datasets=["train"])
+            _, train_src, train_trg = train_data[191]
+
+            for tokenized, lang in [(train_src, train_data.src_lang),
+                                    (train_trg, train_data.trg_lang)]:
+                # check tokenizer
+                tokenizer = train_data.tokenizer[lang]
+                self.assertIs(type(tokenizer), FastBPETokenizer)
+                self.assertEqual(tokenizer.level, "bpe")
+
+                # check tokenized sequence
+                self.assertEqual(tokenized, expected[lang]['tokenized'])
+
+                # check detokenized sequence
+                detokenized = tokenizer.post_process(tokenized)
+                self.assertEqual(detokenized, expected[lang]['detokenized'])
+
+        except (ImportError, RuntimeError) as e:
+            raise unittest.SkipTest(f"{e} Skip.")
+
 
 class TestPrompt(unittest.TestCase):
 
@@ -261,14 +305,14 @@ class TestPrompt(unittest.TestCase):
                 '<de>', '▁', 'J', 'a', '▁', ',', '▁', 'g', 'ut', 'en', '▁T', 'a', 'g',
                 '▁', '.', '<sep>', '▁', 'J', 'a', '▁', ',', '▁', 'al', 's', 'o', '▁',
                 ',', '▁was', '▁so', 'll', '▁B', 'i', 'o', 'h', 'a', 'c', 'k', 'ing',
-                '▁', 'se', 'in', '▁', '?',
+                '▁', 'se', 'in', '▁', '?'
             ],
             "trg": [
                 '<en>', '▁', 'Y', 'es', '▁', ',', '▁h', 'e', 'll', 'o', '▁', '.',
                 '<sep>', '▁', 'Y', 'es', '▁', ',', '▁so', '▁', ',', '▁w', 'h', 'at',
-                '▁is', '▁b', 'i', 'o', 'h', 'a', 'c', 'k', 'ing', '▁', '?',
+                '▁is', '▁b', 'i', 'o', 'h', 'a', 'c', 'k', 'ing', '▁', '?'
             ],
-        }  # yapf: disable
+        }
 
         dev_src, dev_trg = dev_data.src, dev_data.trg
         _, dev_src_2, dev_trg_2 = dev_data[2]
