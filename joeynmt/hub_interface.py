@@ -9,8 +9,14 @@ import numpy as np
 import plotly.express as px
 from torch import nn
 
-from joeynmt.config import BaseConfig, TestConfig, load_config, parse_global_args
-from joeynmt.datasets import BaseDataset, StreamDataset
+from joeynmt.config import (
+    BaseConfig,
+    TestConfig,
+    _check_options,
+    load_config,
+    parse_global_args,
+)
+from joeynmt.datasets import BaseDataset, SpeechStreamDataset, StreamDataset
 from joeynmt.helpers_for_ddp import get_logger
 from joeynmt.model import Model
 from joeynmt.prediction import predict, prepare
@@ -58,17 +64,26 @@ def _from_pretrained(
     cfg.update(kwargs)
     cfg["model_dir"] = model_dir.as_posix()  # override model_dir
 
+    if "task" in cfg["data"]:  # for backwards compatibility
+        cfg["task"] = cfg["data"]["task"]
+    task = cfg.get("task", "MT").upper()
+    _check_options("task", task, ["MT", "S2T"])
+
     # rewrite paths in cfg
     for side in ["src", "trg"]:
-        data_side = cfg["data"][side]
-        data_side["voc_file"] = _check_file_path(data_side["voc_file"],
-                                                 model_dir).as_posix()
-        if "tokenizer_cfg" in data_side:
-            for tok_model in ["codes", "model_file"]:
-                if tok_model in data_side["tokenizer_cfg"]:
-                    data_side["tokenizer_cfg"][tok_model] = _check_file_path(
-                        data_side["tokenizer_cfg"][tok_model], model_dir
-                    ).as_posix()
+        if task == "S2T" and side == "src":
+            assert cfg["data"]["dataset_type"] == "speech"
+            assert cfg["data"][side]["tokenizer_type"] == "speech"
+        else:
+            data_side = cfg["data"][side]
+            data_side["voc_file"] = _check_file_path(data_side["voc_file"],
+                                                     model_dir).as_posix()
+            if "tokenizer_cfg" in data_side:
+                for tok_model in ["codes", "model_file"]:
+                    if tok_model in data_side["tokenizer_cfg"]:
+                        data_side["tokenizer_cfg"][tok_model] = _check_file_path(
+                            data_side["tokenizer_cfg"][tok_model], model_dir
+                        ).as_posix()
 
     if "load_model" in cfg["testing"]:
         cfg["testing"]["load_model"] = _check_file_path(
@@ -128,7 +143,7 @@ class TranslatorHubInterface(nn.Module):
             out.append(pred)
         return out
 
-    def translate(self, src: List[str], **kwargs) -> List[str]:
+    def generate(self, src: List[str], **kwargs) -> List[str]:
         assert isinstance(src, list), "Please provide a list of sentences!"
         kwargs["return_prob"] = "none"
 
@@ -144,12 +159,14 @@ class TranslatorHubInterface(nn.Module):
         trg_prompt: Optional[List[str]] = None,
         **kwargs,
     ) -> List[str]:
-
         # overwrite config
         test_cfg = self.args.test._asdict()
         test_cfg.update(kwargs)
 
-        assert isinstance(self.dataset, StreamDataset), self.dataset
+        if self.args.task == "MT":
+            assert isinstance(self.dataset, StreamDataset), self.dataset
+        elif self.args.task == "S2T":
+            assert isinstance(self.dataset, SpeechStreamDataset), self.dataset
         test_cfg["batch_type"] = "sentence"
         test_cfg["batch_size"] = len(src)
 

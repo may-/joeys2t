@@ -72,6 +72,22 @@ def build_gradient_clipper(cfg: Dict) -> Optional[Callable]:
     return clip_grad_fun
 
 
+def build_layer_norm(layer_norm_type: str = "standard", **kwargs) -> Callable:
+    """
+    Create a layer normalization
+    """
+    # pylint: disable=no-else-return
+    assert "hidden_size" in kwargs
+    if activation == "standard":
+        return nn.LayerNorm(kwargs["hidden_size"], eps=kwargs.get("eps", 1e-6))
+    elif activation == "rms":
+        return RMSNorm(kwargs["hidden_size"], eps=kwargs.get("eps", 1e-6))
+    else:
+        raise ConfigurationError(
+            "Invalid layer norm type. Valid options: {'standard', 'rms'}."
+        )
+
+
 def build_optimizer(cfg: Dict, parameters: Generator) -> Optimizer:
     """
     Create an optimizer for the given parameters as specified in config.
@@ -493,3 +509,25 @@ class WarmupInverseSquareRootScheduler(BaseScheduler):
             f"decay_rate={self.decay_rate:.6f}, peak_rate={self.peak_rate}, "
             f"min_rate={self.min_rate})"
         )
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-6):
+        """
+        RMS LayerNorm
+
+        .. seealso::
+
+            https://arxiv.org/abs/1910.07467
+
+        """
+        super().__init__()
+
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.eps = eps
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = x.to(torch.float32)
+        variance = x.pow(2).mean(-1, keepdim=True)
+        x = x * torch.rsqrt(variance + self.eps)
+        return self.weight * x.to(self.weight.dtype)

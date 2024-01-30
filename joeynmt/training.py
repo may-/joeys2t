@@ -57,6 +57,7 @@ class TrainManager:
         model: Model,
         model_dir: Path,
         device: torch.device,
+        task: str,
         n_gpu: int = 0,
         num_workers: int = 0,
         autocast: Dict = None,
@@ -70,6 +71,7 @@ class TrainManager:
         :param model: torch module defining the model
         :param model_dir: directory to save ckpts
         :param device: torch device
+        :param task: task
         :param n_gpu: number of gpus. 0 if cpu.
         :param num_workers: number of multiprocess workers.
         :param autocast: autocast context
@@ -78,6 +80,7 @@ class TrainManager:
         :param dev_args: config args for validation
         """
         self.rank = rank
+        self.task = task
         self.args = train_args  # config for training
         self.dev_cfg = dev_args  # config for geedy decoding
         self.seed = seed
@@ -405,14 +408,15 @@ class TrainManager:
                     start_correct = self.stats.total_correct
                     epoch_nseqs, epoch_ntokens, epoch_loss = 0, 0, 0
                     total_train_duration, total_valid_duration = 0, 0
-                    total_batch_loss = 0
+                    total_batch_loss, total_nll_loss, total_ctc_loss = 0, 0, 0
                     start = time.time()
 
                 batch: Batch  # yield a joeynmt Batch object
                 for i, batch in enumerate(self.train_iter):
 
                     # get batch loss
-                    batch_loss, correct_tokens = self._train_step(batch)
+                    (batch_loss, nll_loss, ctc_loss,
+                     correct_tokens) = self._train_step(batch)
 
                     batch_nseqs = ddp_reduce(batch.nseqs, self.device, torch.long)
                     batch_ntokens = ddp_reduce(batch.ntokens, self.device, torch.long)
@@ -420,6 +424,8 @@ class TrainManager:
                     # increment token counter
                     if self.rank == 0:
                         total_batch_loss += batch_loss
+                        total_nll_loss += nll_loss
+                        total_ctc_loss += ctc_loss
                         epoch_nseqs += batch_nseqs.item()
                         epoch_ntokens += batch_ntokens.item()
                         self.stats.total_tokens += batch_ntokens.item()
@@ -443,7 +449,7 @@ class TrainManager:
                             self.scheduler.step(self.stats.steps)
 
                         # reset gradients
-                        self.model.zero_grad()
+                        self.model.zero_grad(set_to_none=True)
 
                         # increment step counter
                         self.stats.steps += 1
@@ -472,6 +478,8 @@ class TrainManager:
                         if self.rank == 0:
                             epoch_loss += total_batch_loss  # accumulate loss
                             total_batch_loss = 0  # reset batch loss
+                            total_nll_loss = 0
+                            total_ctc_loss = 0
 
                         # validate on the entire dev set
                         if self.stats.steps % self.args.validation_freq == 0:
@@ -529,13 +537,15 @@ class TrainManager:
                 self._save_checkpoint(False, float("nan"))  # save current weights
                 self.tb_writer.close()  # close Tensorboard writer
 
-    def _train_step(self, batch: Batch) -> Tuple[float, int]:
+    def _train_step(self, batch: Batch) -> Tuple[float, float, float, int]:
         """
         Train the model on one batch: Compute the loss.
 
         :param batch: training batch
         :return:
             - losses for batch (sum)
+            - nll loss
+            - ctc loss
             - number of correct tokens for batch (sum)
         """
         # reactivate training
@@ -546,7 +556,7 @@ class TrainManager:
 
         with torch.autocast(**self.autocast):
             # get loss (run as during training with teacher forcing)
-            batch_loss, _, _, correct_tokens = self.model(
+            batch_loss, nll_loss, ctc_loss, correct_tokens = self.model(
                 return_type="loss", **vars(batch)
             )
 
@@ -557,6 +567,14 @@ class TrainManager:
             n_gpu=self.n_gpu,
             n_accumulation=self.args.batch_multiplier
         )
+
+        norm_nll_loss = batch.normalize(
+            nll_loss, self.args.normalization, self.n_gpu, self.args.batch_multiplier
+        ) if nll_loss is not None else None
+
+        norm_ctc_loss = batch.normalize(
+            ctc_loss, self.args.normalization, self.n_gpu, self.args.batch_multiplier
+        ) if ctc_loss is not None else None
 
         # sum over multiple gpus
         sum_correct_tokens = batch.normalize(correct_tokens, "sum", self.n_gpu)
@@ -570,9 +588,11 @@ class TrainManager:
 
         # gather
         norm_batch_loss = ddp_reduce(norm_batch_loss).item()
+        norm_nll_loss = ddp_reduce(norm_nll_loss).item()
+        norm_ctc_loss = ddp_reduce(norm_ctc_loss).item()
         sum_correct_tokens = ddp_reduce(sum_correct_tokens).item()
 
-        return norm_batch_loss, sum_correct_tokens
+        return norm_batch_loss, norm_nll_loss, norm_ctc_loss, sum_correct_tokens
 
     def _validate(self, valid_data: Dataset) -> None:
         """Validation"""
@@ -701,15 +721,18 @@ class TrainManager:
             logger.info("Example #%d", p)
 
             # detokenized text
-            detokenized_src = data.tokenizer[data.src_lang].post_process(data.src[p])
+            detokenized_src = data.tokenizer[data.src_lang].post_process(data.src[p]) \
+                if self.task == "MT" else data.src[p]
             logger.info("\tSource:     %s", detokenized_src)
             logger.info("\tReference:  %s", references[p])
             logger.info("\tHypothesis: %s", hypotheses[p])
 
             # tokenized text
-            tokenized_src = data.tokenizer[data.src_lang](data.src[p], is_train=False)
+            if self.task == "MT":
+                tokenized_src = data.tokenizer[data.src_lang
+                                               ](data.src[p], is_train=False)
+                logger.debug("\tTokenized source:     %s", tokenized_src)
             tokenized_trg = data.tokenizer[data.trg_lang](data.trg[p], is_train=False)
-            logger.debug("\tTokenized source:     %s", tokenized_src)
             logger.debug("\tTokenized reference:  %s", tokenized_trg)
             logger.debug("\tTokenized hypothesis: %s", hypotheses_raw[p][:-1])
 
@@ -834,6 +857,7 @@ def train(rank: int, world_size: int, cfg: Dict, skip_test: bool = False) -> Non
         model=model,
         model_dir=args.model_dir,
         device=args.device,
+        task=args.task,
         n_gpu=args.n_gpu,
         rank=rank,
         num_workers=args.num_workers,

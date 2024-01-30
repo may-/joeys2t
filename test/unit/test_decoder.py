@@ -210,7 +210,7 @@ class TestRecurrentDecoder(unittest.TestCase):
         # no padding, no mask
         # x_length = torch.Tensor([time_dim]*batch_size).int()
         mask = torch.ones(size=(batch_size, 1, time_dim)).byte()
-        output, hidden, att_probs, att_vectors = decoder(
+        output, hidden, att_probs, att_vectors, _ = decoder(
             trg_inputs,
             encoder_hidden=encoder_states[:, -1, :],
             encoder_output=encoder_states,

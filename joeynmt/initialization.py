@@ -10,6 +10,7 @@ from torch import Tensor, nn
 from torch.nn.init import _calculate_fan_in_and_fan_out
 
 from joeynmt.config import ConfigurationError
+from joeynmt.embeddings import Embeddings
 from joeynmt.helpers_for_ddp import get_logger
 
 logger = get_logger(__name__)
@@ -88,7 +89,7 @@ def initialize_model(
         https://github.com/joeynmt/joeynmt/blob/main/configs/iwslt14_ende_bpe.yaml
 
     The main initializer is set using the `initializer` key. Possible values are
-    `xavier`, `uniform`, `normal` or `zeros`. (`xavier` is the default).
+    `xavier_uniform`, `uniform`, `normal` or `zeros`. (`xavier_uniform` is the default).
 
     When an initializer is set to `uniform`, then `init_weight` sets the range for
     the values (-init_weight, init_weight).
@@ -112,7 +113,7 @@ def initialize_model(
     :param src_padding_idx: index of source padding token
     :param trg_padding_idx: index of target padding token
     """
-    # pylint: disable=too-many-branches
+    # pylint: disable=too-many-branches,too-many-statements
     # defaults: xavier gain 1.0, embeddings: normal 0.01, biases: zeros, no orthogonal
     gain = float(cfg.get("init_gain", 1.0))  # for xavier
     init = cfg.get("initializer", "xavier_uniform")
@@ -135,16 +136,16 @@ def initialize_model(
     bias_init = cfg.get("bias_initializer", "zeros")
     bias_init_weight = float(cfg.get("bias_init_weight", 0.01))
 
+    deepnet = {}
     if (
         init == "xavier_normal"
         and cfg["encoder"]["type"] == cfg["decoder"]["type"] == "transformer"
     ):
         # apply `alpha`: weight factor for residual connection
-        deepnet = {
-            "xavier_normal": compute_alpha_beta(
-                cfg["encoder"]["num_layers"], cfg["decoder"]["num_layers"]
-            )
-        }
+        deepnet["xavier_normal"] = compute_alpha_beta(
+            cfg["encoder"]["num_layers"], cfg["decoder"]["num_layers"]
+        )
+
         for layer in model.encoder.layers:
             layer.alpha = deepnet["xavier_normal"]["alpha"]["encoder"]
             layer.feed_forward.alpha = deepnet["xavier_normal"]["alpha"]["encoder"]
@@ -211,7 +212,8 @@ def initialize_model(
                     init_fn_(p)
 
         # zero out paddings
-        model.src_embed.lut.weight.data[src_padding_idx].zero_()
+        if isinstance(model.src_embed, Embeddings):
+            model.src_embed.lut.weight.data[src_padding_idx].zero_()
         model.trg_embed.lut.weight.data[trg_padding_idx].zero_()
 
         orthogonal = cfg.get("init_rnn_orthogonal", False)

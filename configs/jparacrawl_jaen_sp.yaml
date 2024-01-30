@@ -1,13 +1,15 @@
 name: "jparacrawl_jaen_sp"
 joeynmt_version: "2.3.0"
+task: "MT"
 model_dir: "models/jparacrawl_jaen"
 use_cuda: True
-random_seed: 456
+fp16: True
+random_seed: 42
 
 data:
-    train: "jparacrawl"
-    dev: "wmt21"
-    test: "kftt"
+    train: "datasets/jparacrawl"
+    dev: "datasets/wmt21"
+    test: "datasets/kftt"
     dataset_type: "huggingface"
     dataset_cfg:
         name: "ja-en"
@@ -28,7 +30,7 @@ data:
             model_type: "unigram"
             character_coverage: 1.0
             nbest_size: 10
-            alpha: 0.1
+            alpha: 0.9
     trg:
         lang: "en"
         max_length: 512
@@ -44,7 +46,7 @@ data:
             model_type: "unigram"
             character_coverage: 1.0
             nbest_size: 10
-            alpha: 0.1
+            alpha: 0.9
     special_symbols:
         unk_token: "<unk>"
         unk_id: 0
@@ -73,7 +75,7 @@ testing:
         tokenize: "intl"
 
 training:
-    #load_model: "models/jparacrawl_enja/best.ckpt"
+    #load_model: "models/jparacrawl_enja/latest.ckpt"
     optimizer: "adamw"
     normalization: "tokens"
     adam_betas: [0.9, 0.98]

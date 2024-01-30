@@ -18,6 +18,7 @@ import numpy as np
 import packaging.version
 import torch
 from torch import Tensor, nn
+from torch.nn.functional import pad as _pad
 from torch.utils.tensorboard import SummaryWriter
 
 from joeynmt.helpers_for_ddp import get_logger
@@ -30,7 +31,7 @@ def make_model_dir(model_dir: Path, overwrite: bool = False) -> None:
     """
     Create a new directory for the model.
 
-    :param model_dir: path to model directory
+    :param model_dir: path to the model directory
     :param overwrite: whether to overwrite an existing directory
     """
     model_dir = model_dir.absolute()
@@ -456,11 +457,68 @@ def unicode_normalize(s: str) -> str:
     apply unicodedata NFKC normalization
     - used in pre_process() in tokenizer.py
 
+    cf.) https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/tokenizers/tokenizer_ter.py
+
     :param s: input string
     :return: normalized string
-    """
+    """  # noqa: E501
     s = unicodedata.normalize("NFKC", s)
     s = s.replace("’", "'")
     s = s.replace("“", '"')
     s = s.replace("”", '"')
     return s
+
+
+def remove_punctuation(s: str, space: chr):
+    """
+    Remove punctuation based on Unicode category.
+    Taken from https://github.com/pytorch/fairseq/blob/main/fairseq/scoring/tokenizer.py
+    cf.) https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/tokenizers/tokenizer_ter.py
+
+    :param s: input string
+    :param space: charactor for white space (delimiter special char)
+    :return: string without punctuation
+    """  # noqa: E501
+    return space.join(t for t in s.split(space)
+                      if not all(unicodedata.category(c)[0] == "P" for c in t))
+
+
+def lengths_to_padding_mask(lengths: Tensor) -> Tensor:
+    """
+    get padding mask according to the given lengths
+
+    :param lengths: length list in shape (batch_size, 1)
+    :return: mask
+    """
+    bsz, max_lengths = lengths.size(0), torch.max(lengths).item()
+    mask = torch.arange(max_lengths).to(lengths.device).view(1, max_lengths)
+    mask = mask.expand(bsz, -1) >= lengths.view(bsz, 1).expand(-1, max_lengths)
+    return ~mask
+
+
+def pad(x: Tensor, max_len: int, pad_index: int = 1, dim: int = 1) -> Tensor:
+    """
+    pad tensor
+
+    :param x: tensor in shape (batch_size, seq_len, _)
+    :param max_len: max_length
+    :param pad_index: index of the pad token
+    :param dim: dimension to pad
+    :return: padded tensor
+    """
+    if pad_index is None:
+        pad_index = 1
+
+    # pylint: disable=not-callable
+    if dim == 1:
+        _, seq_len, _ = x.size()
+        offset = max_len - seq_len
+        new_x = _pad(x, (0, 0, 0, offset, 0, 0), "constant", pad_index) \
+            if x.size(dim) < max_len else x
+    elif dim == -1:
+        _, _, seq_len = x.size()
+        offset = max_len - seq_len
+        new_x = _pad(x, (0, offset), "constant", pad_index) \
+            if x.size(dim) < max_len else x
+    assert new_x.size(dim) == max_len, (x.size(), offset, new_x.size(), max_len)
+    return new_x

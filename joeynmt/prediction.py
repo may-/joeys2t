@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from joeynmt.config import BaseConfig, TestConfig, parse_global_args
 from joeynmt.data import load_data
-from joeynmt.datasets import StreamDataset
+from joeynmt.datasets import SpeechStreamDataset, StreamDataset
 from joeynmt.helpers import (
     cast_and_sort,
     expand_reverse_index,
@@ -39,10 +39,18 @@ from joeynmt.helpers_for_ddp import (
     get_logger,
     use_ddp,
 )
-from joeynmt.loss import XentLoss
-from joeynmt.metrics import bleu, chrf, sequence_accuracy, token_accuracy
+from joeynmt.loss import XentCTCLoss, XentLoss
+from joeynmt.metrics import (
+    bleu,
+    chrf,
+    get_transform,
+    sequence_accuracy,
+    token_accuracy,
+    wer,
+)
 from joeynmt.model import DataParallelWrapper, Model, build_model
 from joeynmt.search import search
+from joeynmt.tokenizers import EvaluationTokenizer
 
 logger = get_logger(__name__)
 
@@ -239,7 +247,7 @@ def predict(
 
                 # we don't know the order of merged outputs.
                 # sort them back by indices after the batch loop has ended.
-                batch_indices = ddp_merge(batch.indices.unsqueeze(1), -1).squeeze()
+                batch_indices = ddp_merge(batch.indices, -1)
                 assert torch.all(batch_indices >= 0).item(), batch_indices
                 assert len(batch_indices) == len(outputs) == batch_nseqs
 
@@ -263,6 +271,7 @@ def predict(
                 pbar.update(batch_nseqs)
 
     gen_duration = time.time() - gen_start_time
+    gen_duration = ddp_reduce(gen_duration, device, torch.float).item()
     logger.info("Generation took %.4f[sec].", gen_duration)
 
     if rank == 0:
@@ -289,30 +298,29 @@ def predict(
             assert normalizer > 0, normalizer
             assert total_ntokens > 0, total_ntokens
 
-            # normalized loss
-            valid_scores["loss"] = total_loss / normalizer
-            # accuracy before decoding
-            valid_scores["acc"] = total_n_correct / total_ntokens
-            # exponent of token-level negative log likelihood
-            valid_scores["ppl"] = math.exp(total_loss / total_ntokens)
-
         # decode ids back to str symbols (cut-off AFTER eos; eos itself is included.)
         decoded_valid = model.trg_vocab.arrays_to_sentences(
             arrays=all_outputs, cut_at_eos=True
         )
         # TODO: `valid_seq_scores` should have the same seq length as `decoded_valid`
         #     -> needed to be cut-off at eos/sep synchronously
-
+    
         if args.return_prob == "ref":  # no evaluation needed
             logger.info(
-                "Evaluation result (scoring) %s.", ", ".join([
+                "Evaluation result (scoring) %s, duration: %.4f[sec]",
+                ", ".join([
                     f"{eval_metric}: {valid_scores[eval_metric]:6.2f}"
                     for eval_metric in ["loss", "ppl", "acc"]
-                ])
+                ]),
+                gen_duration,
             )
             return (
-                valid_scores, None, None, decoded_valid, valid_seq_scores,
-                valid_attn_scores
+                valid_scores,
+                None,  # valid_ref
+                None,  # valid_hyp
+                decoded_valid,
+                valid_seq_scores,
+                valid_attn_scores,
             )
 
         # retrieve detokenized hypotheses
@@ -363,11 +371,7 @@ def evaluate(
     # references are not length-filtered, not duplicated for n_best > 1
     # we apply postprocessing (lower casing, unicode normalization, etc.)
     # so they are different from the original reference.
-    valid_ref = [
-        data.tokenizer[data.trg_lang].post_process(
-            t, generate_unk=args.generate_unk, cut_at_sep=True
-        ) for t in data.trg
-    ]
+    valid_ref = [data.tokenizer[data.trg_lang].post_process(t) for t in data.trg]
 
     # metrics are computed on the 1-best hypotheses
     valid_hyp_1best = [
@@ -393,6 +397,16 @@ def evaluate(
             )
         elif eval_metric == "sequence_accuracy":
             valid_scores[eval_metric] = sequence_accuracy(valid_hyp_1best, valid_ref)
+        elif eval_metric == "wer":
+            if "eval" not in data.tokenizer:  # better to handle this in data.py?
+                data.tokenizer["eval"] = EvaluationTokenizer(
+                    lowercase=args.sacrebleu_cfg.get("lowercase", False),
+                    tokenize=args.sacrebleu_cfg.get("tokenize", "13a"),
+                    no_punc=args.sacrebleu_cfg.get("no_punc", False),
+                )
+            valid_scores[eval_metric] = wer(
+                valid_hyp_1best, valid_ref, get_transform(data.tokenizer["eval"])
+            )
 
     eval_duration = time.time() - eval_start_time
 
@@ -423,7 +437,8 @@ def prepare(
     :param rank: ddp rank
     :param mode: execution mode
     """
-    # load the data
+    # pylint: disable=too-many-branches
+
     if mode == "train":
         datasets = ["train", "dev", "test"]
     if mode == "test":
@@ -432,20 +447,27 @@ def prepare(
         datasets = ["stream"]
 
     if mode != "train":
-        if "voc_file" not in args.data["src"] or not args.data["src"]["voc_file"]:
+        if (
+            args.task == "MT" and (
+                "voc_file" not in args.data["src"]  # yapf: disable
+                or not args.data["src"]["voc_file"]
+            )
+        ):
             args.data["src"]["voc_file"] = (args.model_dir / "src_vocab.txt").as_posix()
         if "voc_file" not in args.data["trg"] or not args.data["trg"]["voc_file"]:
             args.data["trg"]["voc_file"] = (args.model_dir / "trg_vocab.txt").as_posix()
 
+    # load the data
     src_vocab, trg_vocab, train_data, dev_data, test_data = load_data(
-        cfg=args.data, datasets=datasets
+        cfg=args.data, datasets=datasets, task=args.task
     )
 
     if mode == "train" and rank == 0:
         # store the vocabs and tokenizers
-        src_vocab.to_file(args.model_dir / "src_vocab.txt")
-        if hasattr(train_data.tokenizer[train_data.src_lang], "copy_cfg_file"):
-            train_data.tokenizer[train_data.src_lang].copy_cfg_file(args.model_dir)
+        if args.task == "MT":
+            src_vocab.to_file(args.model_dir / "src_vocab.txt")
+            if hasattr(train_data.tokenizer[train_data.src_lang], "copy_cfg_file"):
+                train_data.tokenizer[train_data.src_lang].copy_cfg_file(args.model_dir)
         trg_vocab.to_file(args.model_dir / "trg_vocab.txt")
         if hasattr(train_data.tokenizer[train_data.trg_lang], "copy_cfg_file"):
             train_data.tokenizer[train_data.trg_lang].copy_cfg_file(args.model_dir)
@@ -455,10 +477,18 @@ def prepare(
     model.log_parameters_list()
 
     # need to instantiate loss func after `build_model()`
-    assert args.train.loss == "crossentropy", args.train.loss
-    model.loss_function = XentLoss(
-        pad_index=model.pad_index, smoothing=args.train.label_smoothing
-    )
+    if args.train.loss == "crossentropy":
+        model.loss_function = XentLoss(
+            pad_index=model.pad_index, smoothing=args.train.label_smoothing
+        )
+        model.decoder.ctc_output_layer = None
+    elif args.train.loss == "crossentropy-ctc":
+        model.loss_function = XentCTCLoss(
+            pad_index=model.pad_index,
+            bos_index=model.bos_index,  # bos -> blank
+            smoothing=args.train.label_smoothing,
+            ctc_weight=args.train.ctc_weight,
+        )
 
     # move to gpu
     if args.device.type == "cuda":
@@ -539,7 +569,7 @@ def test(
     if save_attention:
         assert output_path, "Please specify --output-path for attention plots."
         if cfg["model"]["decoder"]["type"] == "transformer":
-            assert cfg["testing"].get("beam_size", 1) == 1, (
+            assert args.test.beam_size == 1, (
                 "Attention plots can be saved with greedy decoding only. Please set "
                 "`beam_size: 1` in the config."
             )
@@ -553,7 +583,8 @@ def test(
             )
             save_scores = False
         elif args.test.return_prob == "ref":
-            assert cfg["testing"].get("beam_size", 1) == 1, (
+
+            assert args.test.beam_size == 1, (
                 "Scores of given references can be computed with greedy decoding only. "
                 "Please set `beam_size: 1` in the config."
             )
@@ -586,6 +617,7 @@ def test(
 
                 if save_attention and any(len(x) > 0 for x in att_scores):
                     attention_file_name = f"{output_path}.{split}.att"
+
                     logger.info("Saving attention plots. This might take a while..")
                     store_attention_plots(
                         attentions=att_scores,
@@ -626,22 +658,24 @@ def test(
 def translate(cfg: Dict, output_path: str = None) -> None:
     """
     Interactive translation function.
-    Loads model from checkpoint and translates either the stdin input or asks for
+    Loads model from a checkpoint and translates either the stdin input or asks for
     input to translate interactively. Translations and scores are printed to stdout.
 
     .. note::
         The input sentences don't have to be pre-tokenized.
 
     :param cfg: configuration dict
-    :param output_path: path to output file
+    :param output_path: path to the output file
     """
-
     # parse args
-    args = parse_global_args(cfg, rank=0, mode="translate")
+    args = parse_global_args(cfg, rank=0, mode="test")
 
     # load the model
     model, _, _, test_data = prepare(args, rank=0, mode="translate")
-    assert isinstance(test_data, StreamDataset)
+    if args.task == "MT":
+        assert isinstance(test_data, StreamDataset)
+    elif args.task == "S2T":
+        assert isinstance(test_data, SpeechStreamDataset)
 
     logger.info(
         "Ready to decode. (device: %s, n_gpu: %s, use_ddp: %r, fp16: %r)",

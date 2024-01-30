@@ -7,6 +7,7 @@
 #
 name: "reverse_experiment_transformer"
 joeynmt_version: "2.3.0"
+task: "MT"
 model_dir: "models/reverse_transformer"
 use_cuda: True
 fp16: True
@@ -42,9 +43,9 @@ data:
         eos_id: 3
 
 testing:
-    #load_model: "models/reverse_transformer/best.ckpt"
-    n_best: 2
-    beam_size: 2
+    load_model: "models/reverse_transformer/best.ckpt"
+    n_best: 1
+    beam_size: 1
     beam_alpha: 1.0
     eval_metrics: ["bleu"]
     max_output_length: 30
@@ -74,7 +75,7 @@ training:
     shuffle: True
     print_valid_sents: [0, 3, 6]
     keep_best_ckpts: 2
-    overwrite: True
+    overwrite: False
 
 model:
     initializer: "xavier_uniform"

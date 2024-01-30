@@ -8,6 +8,7 @@
 name: "reverse_experiment_rnn"
 joeynmt_version: "2.3.0"
 model_dir: "models/reverse_rnn"
+task: "MT"
 use_cuda: False
 fp16: True
 random_seed: 42

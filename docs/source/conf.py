@@ -23,9 +23,14 @@ sys.path.insert(0, root_path)
 
 # -- Project information -----------------------------------------------------
 
-project = 'Joey NMT'
-copyright = '2018, Jasmijn Bastings and Julia Kreutzer'
-author = 'Jasmijn Bastings and Julia Kreutzer'
+project = 'Joey S2T'
+copyright = '2022, Mayumi Ohta'
+author = 'Mayumi Ohta'
+
+for line in (Path(root_path) / "joeynmt/__init__.py").read_text().splitlines():
+    if line.startswith("__version__"):
+        joeynmt_version = line.strip().split('=')[-1].strip()[1:-1]
+        break
 
 for line in (Path(root_path) / "joeynmt/__init__.py").read_text().splitlines():
     if line.startswith("__version__"):
@@ -116,7 +121,7 @@ html_logo = (Path(root_path) / "joey2-small.png").as_posix()
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'JoeyNMTdoc'
+htmlhelp_basename = 'JoeyS2Tdoc'
 
 
 # -- Options for LaTeX output ------------------------------------------------
@@ -143,8 +148,8 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'JoeyNMT.tex', 'Joey NMT Documentation',
-     'Jasmijn Bastings and Julia Kreutzer', 'manual'),
+    (master_doc, 'JoeyS2T.tex', 'Joey S2T Documentation',
+     author, 'manual'),
 ]
 
 
@@ -153,7 +158,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'joeynmt', 'Joey NMT Documentation',
+    (master_doc, 'joeys2t', 'Joey S2T Documentation',
      [author], 1)
 ]
 
@@ -164,8 +169,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'JoeyNMT', 'Joey NMT Documentation',
-     author, 'JoeyNMT', 'One line description of project.',
+    (master_doc, 'JoeyS2T', 'Joey S2T Documentation',
+     author, 'JoeyS2T', 'One line description of project.',
      'Miscellaneous'),
 ]
 
@@ -192,12 +197,15 @@ epub_exclude_files = ['search.html']
 # https://www.sphinx-doc.org/en/master/usage/extensions/extlinks.html
 
 github_url = "https://github.com"
-github_repo_org = "joeynmt"
-github_repo_name = "joeynmt"
+github_repo_org = "may-"
+github_repo_name = "joeys2t"
 github_repo_slug = f"{github_repo_org}/{github_repo_name}"
 github_repo_url = f"{github_url}/{github_repo_slug}"
 github_repo_main_url = f"{github_url}/{github_repo_slug}/blob/main"
 github_repo_issues_url = f"{github_url}/{github_repo_slug}/issues"
+
+download_url = "https://www.cl.uni-heidelberg.de/statnlpgroup/joeynmt2"
+fairseq_url = "https://github.com/facebookresearch/fairseq/blob/v0.12.2/examples"
 
 extlinks = {
     "joeynmt": (f"{github_repo_main_url}/joeynmt/%s", "%s"),
@@ -207,6 +215,8 @@ extlinks = {
     "issue": (f"{github_repo_issues_url}/%s", "#%s"),
     "pr": (f"{github_repo_url}/pull/%s", "PR #%s"),
     "commit": (f"{github_repo_url}/commit/%s", "%s"),
+    "joeynmt2": (f"{download_url}/%s", "%s"),
+    "fairseq": (f"{fairseq_url}/%s", "%s"),
 }
 
 

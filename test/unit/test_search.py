@@ -53,7 +53,7 @@ class TestSearch(unittest.TestCase):
 
         self.expected_recurrent_ids = torch.tensor([[0, 0, 0], [0, 0, 0]])
         self.expected_recurrent_scores = torch.tensor([
-            [-2.7310, -1.1748, -0.8349], [-1.8635, -1.6904, -1.4866],
+            [-2.7141, -1.0534, -0.7047], [-1.3230, -1.2314, -1.1091],
         ])  # yapf: disable
 
 
@@ -174,7 +174,7 @@ class TestSearchTransformer(TestSearch):
              [0.3194, 0.0042, 0.4271, 0.2492], [0.3523, 0.0036, 0.3957, 0.2484],
              [0.3335, 0.0034, 0.4143, 0.2488], [0.3135, 0.0031, 0.4346, 0.2488],
              [0.3322, 0.0034, 0.4158, 0.2486]],
-        ])
+        ])  # yapf: disable
         self.assertEqual(
             attention_scores.shape,  # batch x trg_len x src_len
             (batch_size, max_output_length, encoder_output.size(1))
@@ -388,7 +388,7 @@ class TestSearchTransformer(TestSearch):
              [0.3343, 0.6314, 0.0343, 0.0000]],
             [[0.2648, 0.1326, 0.5174, 0.0852], [0.2642, 0.1167, 0.5365, 0.0825],
              [0.2646, 0.1125, 0.5421, 0.0809]],
-        ])
+        ])  # yapf: disable
         torch.testing.assert_close(attention, expected_attention, rtol=1e-4, atol=1e-4)
 
     def test_repetition_penalty_in_beam_search(self):
@@ -579,7 +579,7 @@ class TestSearchRecurrent(TestSearch):
              [0.1468, 0.1553, 0.6240, 0.0740]],
             [[0.0854, 0.1041, 0.7020, 0.1085], [0.2067, 0.1528, 0.5042, 0.1363],
              [0.2170, 0.1495, 0.4908, 0.1426]],
-        ])
+        ])  # yapf: disable
         torch.testing.assert_close(
             attention_scores, expected_attention_scores, rtol=1e-4, atol=1e-4
         )
@@ -602,7 +602,6 @@ class TestSearchRecurrent(TestSearch):
             return_prob="hyp",
             autocast=self.autocat,
         )
-
         self.assertEqual(greedy_output.shape, (batch_size, max_output_length))
         torch.testing.assert_close(
             greedy_output, self.expected_recurrent_ids, check_dtype=False

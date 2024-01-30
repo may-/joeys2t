@@ -77,6 +77,12 @@ def ddp_merge(data: Tensor, pad_index: int = 1) -> Tensor:
 
     if use_ddp():
         dim = len(data.size())
+        squeeze_flag = False
+        if dim == 1:
+            squeeze_flag = True
+            data = data.unsqueeze(1)
+            dim = len(data.size())
+        
         if dim == 2:
             batch_size, seq_length = data.size()
         elif dim == 3:
@@ -159,6 +165,9 @@ def ddp_merge(data: Tensor, pad_index: int = 1) -> Tensor:
                 assert torch.all(cutoff == pad_index).item()
         data = torch.cat(valid, dim=0)
         assert data.size(0) == valid_batch_size, (data.size(), valid_batch_size)
+
+        if squeeze_flag:
+            data = data.squeeze()
     return data
 
 

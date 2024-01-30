@@ -1,40 +1,51 @@
 .. _index:
 
 ====================================
-Welcome to Joey NMT's documentation!
+Welcome to Joey S2T's documentation!
 ====================================
 
-Goals & Purposes
-----------------
+**JoeyS2T** is a `JoeyNMT <https://github.com/joeynmt/joeynmt>`_ extension for Speech-to-Text tasks such as Automatic Speech Recognition (ASR) and end-to-end Speech Translation (ST). It inherits the core philosophy of **JoeyNMT**, a minimalist NMT toolkit built on PyTorch, seeking **simplicity** and **accessibility**.
 
-Joey NMT framework is developed for educational purposes.
-It aims to be a **clean** and **minimalistic** code base to help novices find fast answers to the following questions.
 
-- How to implement classic NMT architectures (RNN and Transformer) in PyTorch?
-- What are the building blocks of these architectures and how do they interact?
-- How to modify these blocks (e.g. deeper, wider, ...)?
-- How to modify the training procedure (e.g. add a regularizer)?
+**JoeyS2T** implements the following features:
 
-In contrast to other NMT frameworks, we will **not** aim for the most recent features or speed through engineering or training tricks since this often goes in hand with an increase in code complexity and a decrease in readability.
-
-However, Joey NMT re-implements baselines from major publications.
-
-Features
---------
-
-Joey NMT implements the following features (aka the minimalist toolkit of NMT):
-
-- Recurrent Encoder-Decoder with GRUs or LSTMs
 - Transformer Encoder-Decoder
-- Attention Types: MLP, Dot, Multi-Head, Bilinear
-- Word-, BPE- and character-based tokenization
-- BLEU, ChrF evaluation
-- Beam search with length penalty and greedy decoding
+- 1d-Conv Subsampling
+- Cross-entropy and CTC joint objective
+- Mel filterbank spectrogram extraction
+- CMVN, SpecAugment
+- WER evaluation
+
+Furthermore, all the functionalities in **JoeyNMT** v2 are also available from **JoeyS2T**:
+
+- BLEU and ChrF evaluation
+- BPE tokenization (with BPE dropout option)
+- Beam search and greedy decoding (with repetition penalty, ngram blocker)
 - Customizable initialization
 - Attention visualization
 - Learning curve plotting
 - Scoring hypotheses and references
 - Multilingual translation with language tags
+
+
+
+If you use **JoeyS2T** in a publication or thesis, please cite the following `paper <https://arxiv.org/abs/2210.02545>`_:
+
+::
+
+    @inproceedings{ohta-etal-2022-joeys2t,
+        title = "{JoeyS2T}: Minimalistic Speech-to-Text Modeling with {JoeyNMT}",
+        author = "Ohta, Mayumi  and
+          Kreutzer, Julia  and
+          Riezler, Stefan",
+        booktitle = "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing: System Demonstrations",
+        month = dec,
+        year = "2022",
+        address = "Abu Dhabi, UAE",
+        publisher = "Association for Computational Linguistics",
+        url = "https://aclanthology.org/2022.emnlp-demos.6",
+        pages = "50--59",
+    }
 
 
 .. toctree::

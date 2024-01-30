@@ -7,8 +7,12 @@ from typing import Optional
 
 import torch
 from torch import Tensor, nn
+from xformers.components.positional_embedding import RotaryEmbedding
 
-from joeynmt.builders import build_activation
+from joeynmt.builders import build_activation, build_layer_norm
+from joeynmt.helpers_for_ddp import get_logger
+
+logger = get_logger(__name__)
 
 
 class MultiHeadedAttention(nn.Module):
@@ -20,13 +24,20 @@ class MultiHeadedAttention(nn.Module):
         https://github.com/OpenNMT/OpenNMT-py
     """
 
-    def __init__(self, num_heads: int, size: int, dropout: float = 0.1) -> None:
+    def __init__(
+        self,
+        num_heads: int,
+        size: int,
+        dropout: float = 0.1,
+        use_rotary_pe: bool = False,
+    ) -> None:
         """
         Create a multi-headed attention layer.
 
         :param num_heads: the number of heads
         :param size: hidden size (must be divisible by num_heads)
         :param dropout: probability of dropping a unit
+        :param use_rotary_pe: (bool) whether to use rotary encoding
         """
         super().__init__()
 
@@ -44,13 +55,16 @@ class MultiHeadedAttention(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
         self.dropout = nn.Dropout(dropout)
 
+        self.rotary_pe = RotaryEmbedding(self.head_size) if use_rotary_pe else None
+
     def forward(
         self,
         k: Tensor,
         v: Tensor,
         q: Tensor,
         mask: Optional[Tensor] = None,
-        return_weights: Optional[bool] = None,
+        return_weights: Optional[bool] = False,
+        apply_rotary_pe: Optional[bool] = True,
     ):
         """
         Computes multi-headed attention.
@@ -61,6 +75,7 @@ class MultiHeadedAttention(nn.Module):
         :param mask: optional mask [batch_size, 1, seq_len]
         :param return_weights: whether to return the attention weights,
             averaged over heads.
+        :param apply_rotary_pe: whether to apply rotary encoding
         :return:
             - output  [batch_size, query_len, hidden_size]
             - attention_weights  [batch_size, query_len, key_len]
@@ -79,6 +94,9 @@ class MultiHeadedAttention(nn.Module):
         k = k.view(batch_size, -1, self.num_heads, self.head_size).transpose(1, 2)
         v = v.view(batch_size, -1, self.num_heads, self.head_size).transpose(1, 2)
         q = q.view(batch_size, -1, self.num_heads, self.head_size).transpose(1, 2)
+
+        if self.rotary_pe is not None and apply_rotary_pe:
+            q, k = self.rotary_embeddings(q=q, k=k)
 
         # compute scores
         q = q / math.sqrt(self.head_size)
@@ -130,6 +148,7 @@ class PositionwiseFeedForward(nn.Module):
     ) -> None:
         """
         Initializes position-wise feed-forward layer.
+
         :param input_size: dimensionality of the input.
         :param ff_size: dimensionality of intermediate representation
         :param dropout: dropout probability
@@ -141,7 +160,7 @@ class PositionwiseFeedForward(nn.Module):
 
         activation_fnc = build_activation(activation=activation)
 
-        self.layer_norm = nn.LayerNorm(input_size, eps=1e-6)
+        self.layer_norm = build_layer_norm(layer_norm_type, hidden_size=size)
         self.pwff_layer = nn.Sequential(
             nn.Linear(input_size, ff_size),
             activation_fnc(),
@@ -164,6 +183,117 @@ class PositionwiseFeedForward(nn.Module):
         if self._layer_norm_position == "post":
             x = self.layer_norm(x)
         return x
+
+
+class SparseTopkFeedForward(nn.Module):
+    def __init__(
+        self, 
+        input_size: int,
+        ff_size: int,
+        activation: str = "relu",
+    ):
+        super().__init__()
+
+        self.activation_fnc = build_activation(activation=activation)
+
+        self.w1 = nn.Linear(input_size, ff_size, bias=False)
+        self.w2 = nn.Linear(ff_size, input_size, bias=False)
+        self.w3 = nn.Linear(input_size, ff_size, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.w1(x)
+        x = self.activation_fnc(x)
+        x = x * self.w3(x)
+        x = self.w2(x)
+        return x
+
+
+class MoE(nn.Module):
+    """
+    Mixture-of-Experts layer
+        
+    .. seealso::
+        mostly taken from MixtralSparseMoeBlock
+        https://github.com/huggingface/transformers/blob/v4.37.2/src/transformers/models/mixtral/modeling_mixtral.py
+    """
+
+    def __init__(
+        self,
+        num_experts: int,
+        num_experts_per_tok: int,
+        input_size: int,
+        ff_size: int,
+        dropout: float = 0.1,
+        alpha: float = 1.0,
+        layer_norm: str = "post",
+        layer_norm_type: str = "rms",
+        activation: str = "relu",
+    ):
+        """
+        Initialize MoE.
+        
+        :param num_experts: (int) number of experts for MoE
+        :param num_experts_per_tok: (int) number of experts choice per token
+        :param input_size: dimensionality of the input.
+        :param ff_size: dimensionality of intermediate representation
+        :param dropout: dropout probability
+        :param alpha: weight factor for residual connection
+        :param layer_norm: either "pre" or "post"
+        :param layer_norm_type: layer norm type
+        :param activation: (str) activation function
+        """
+        super().__init__()
+        self.experts = nn.ModuleList([
+            SparseTopkFeedForward(input_size, ff_size, activation)
+            for _ in range(num_experts)
+        ])
+        self.gate = nn.Linear(input_size, num_experts, bias=False)
+        self.top_k = num_experts_per_tok
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch_size, seq_len, hidden_size = x.shape
+        x = x.view(-1, hidden_size)
+
+        router_logits = self.gate(x)  # (batch_size * seq_len, num_experts)
+
+        routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
+        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
+        routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+        routing_weights = routing_weights.to(hidden_states.dtype)  # cast dtype back
+
+        final_x = torch.zeros(
+            (batch_size * seq_len, hidden_size), dtype=x.dtype, device=x.device
+        )
+
+        # One hot encode the selected experts to create an expert mask
+        # this will be used to easily index which expert is going to be sollicitated
+        expert_mask = F.one_hot(
+            selected_experts, num_classes=self.num_experts
+        ).permute(2, 1, 0)
+
+        # Loop over all available experts in the model
+        # and perform the computation on each expert
+        for expert_idx, expert_layer in enumerate(self.experts):
+            idx, top_x = torch.where(expert_mask[expert_idx])
+
+            if top_x.shape[0] == 0:
+                continue
+
+            # in torch it is faster to index using lists than torch tensors
+            top_x_list = top_x.tolist()
+            idx_list = idx.tolist()
+
+            # Index the correct hidden states and compute the expert hidden state for
+            # the current expert. We need to make sure to multiply the output hidden
+            # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
+            current_x = x[None, top_x_list].reshape(-1, hidden_size)
+            current_x = expert_layer(current_x) * routing_weights[top_x_list, idx_list, None]
+
+            # However `index_add_` only support torch tensors for indexing so we'll use
+            # the `top_x` tensor here.
+            final_x.index_add_(0, top_x, current_x.to(x.dtype))
+
+        return final_x.reshape(batch_size, seq_len, hidden_size)
 
 
 class PositionalEncoding(nn.Module):
@@ -227,12 +357,16 @@ class TransformerEncoderLayer(nn.Module):
         alpha: float = 1.0,
         layer_norm: str = "post",
         activation: str = "relu",
+        num_experts: int = 1,
+        num_experts_per_tok: int = 2,
+        use_rotary_pe: bool = False,
     ) -> None:
         """
         A single Transformer encoder layer.
 
-        Note: don't change the name or the order of members!
-        otherwise pretrained models cannot be loaded correctly.
+        .. caution::
+            Don't change the name or the order of members!
+            Otherwise pretrained models cannot be loaded correctly.
 
         :param size: model dimensionality
         :param ff_size: size of the feed-forward intermediate layer
@@ -241,13 +375,27 @@ class TransformerEncoderLayer(nn.Module):
         :param alpha: weight factor for residual connection
         :param layer_norm: either "pre" or "post"
         :param activation: activation function
+        :param num_experts: number of experts for MoE
+        :param num_experts_per_tok: number of experts choice per token
+        :param use_rotary_pe: whether to use rotary encoding
         """
         super().__init__()
 
-        self.layer_norm = nn.LayerNorm(size, eps=1e-6)
-        self.src_src_att = MultiHeadedAttention(num_heads, size, dropout=dropout)
+        self.layer_norm = build_layer_norm(layer_norm_type, hidden_size=size)
+        self.src_src_att = MultiHeadedAttention(
+            num_heads, size, dropout=dropout, use_rotary_pe=use_rotary_pe
+        )
 
-        self.feed_forward = PositionwiseFeedForward(
+        self.feed_forward = MoE(
+            num_experts,
+            num_experts_per_tok,
+            size=size,
+            ff_size=ff_size,
+            dropout=dropout,
+            alpha=alpha,
+            layer_norm=layer_norm,
+            activation=activation,
+        ) if num_experts > 1 else PositionwiseFeedForward(
             size,
             ff_size=ff_size,
             dropout=dropout,
@@ -291,8 +439,7 @@ class TransformerEncoderLayer(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     """
     Transformer decoder layer.
-
-    Consists of self-attention, source-attention, and feed-forward.
+    Consists of self-attention, cross-attention, and feed-forward.
     """
 
     def __init__(
@@ -304,6 +451,9 @@ class TransformerDecoderLayer(nn.Module):
         alpha: float = 1.0,
         layer_norm: str = "post",
         activation: str = "relu",
+        num_experts: int = 1,
+        num_experts_per_tok: int = 2,
+        use_rotary_pe: bool = False,
     ) -> None:
         """
         Represents a single Transformer decoder layer.
@@ -320,14 +470,29 @@ class TransformerDecoderLayer(nn.Module):
         :param alpha: weight factor for residual connection
         :param layer_norm: either "pre" or "post"
         :param activation: activation function
+        :param num_experts: number of experts for MoE
+        :param num_experts_per_tok: number of experts choice per token
+        :param use_rotary_pe: whether to use rotary encoding
         """
         super().__init__()
         self.size = size
 
-        self.trg_trg_att = MultiHeadedAttention(num_heads, size, dropout=dropout)
-        self.src_trg_att = MultiHeadedAttention(num_heads, size, dropout=dropout)
-
-        self.feed_forward = PositionwiseFeedForward(
+        self.trg_trg_att = MultiHeadedAttention(
+            num_heads, size, dropout=dropout, use_rotary_pe=use_rotary_pe
+        )
+        self.src_trg_att = MultiHeadedAttention(
+            num_heads, size, dropout=dropout, use_rotary_pe=use_rotary_pe
+        )
+        self.feed_forward = MoE(
+            num_experts,
+            num_experts_per_tok,
+            size=size,
+            ff_size=ff_size,
+            dropout=dropout,
+            alpha=alpha,
+            layer_norm=layer_norm,
+            activation=activation,
+        ) if num_experts > 1 else PositionwiseFeedForward(
             size,
             ff_size=ff_size,
             dropout=dropout,
@@ -336,8 +501,8 @@ class TransformerDecoderLayer(nn.Module):
             activation=activation,
         )
 
-        self.x_layer_norm = nn.LayerNorm(size, eps=1e-6)
-        self.dec_layer_norm = nn.LayerNorm(size, eps=1e-6)
+        self.x_layer_norm = build_layer_norm(layer_norm_type, hidden_size=size)
+        self.dec_layer_norm = build_layer_norm(layer_norm_type, hidden_size=size)
 
         self.dropout = nn.Dropout(dropout)
         self.alpha = alpha
@@ -392,7 +557,12 @@ class TransformerDecoderLayer(nn.Module):
             h1 = self.dec_layer_norm(h1)
 
         h2, att = self.src_trg_att(
-            memory, memory, h1, mask=src_mask, return_weights=return_attention
+            memory,  # key
+            memory,  # value
+            h1,  # query
+            mask=src_mask,
+            return_weights=return_attention,
+            apply_rotary_pe=False,
         )
         h2 = self.dropout(h2) + self.alpha * h1_residual
 

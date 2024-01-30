@@ -5,6 +5,7 @@ Evaluation metrics
 from inspect import getfullargspec
 from typing import Callable, List
 
+import jiwer
 from sacrebleu.metrics import BLEU, CHRF
 
 from joeynmt.helpers_for_ddp import get_logger
@@ -108,3 +109,56 @@ def sequence_accuracy(hypotheses: List[str], references: List[str]) -> float:
         1 for (hyp, ref) in zip(hypotheses, references) if hyp == ref
     ])
     return (correct_sequences / len(hypotheses)) * 100 if hypotheses else 0.0
+
+
+class ReduceToListOfListOfWords(jiwer.ReduceToListOfListOfWords):
+    """
+    Define transformation
+
+    .. seealso::
+        https://github.com/jitsi/jiwer/blob/master/jiwer/transforms.py
+
+    """
+
+    def __init__(self, tokenizer: BasicTokenizer):
+        super().__init__()
+        self.tokenizer = tokenizer
+
+    def process_string(self, s: str):
+        return [self.tokenizer(s)]
+
+
+def get_transform(tokenizer) -> jiwer.Compose:
+    """
+    Get transformation
+
+    .. seealso::
+        https://github.com/jitsi/jiwer/blob/master/jiwer/transformations.py
+
+    """
+    return jiwer.Compose([
+        jiwer.RemoveMultipleSpaces(),
+        jiwer.Strip(),
+        # jiwer.ReduceToListOfListOfWords(),
+        ReduceToListOfListOfWords(tokenizer),
+    ])
+
+
+def wer(hypotheses, references, transform) -> float:
+    """
+    Compute word error rate in corpus-level
+
+    .. seealso::
+        https://github.com/jitsi/jiwer/blob/master/jiwer/measures.py
+
+    :param hypotheses: list of hypotheses (strings)
+    :param references: list of references (strings)
+    :param transform: tokenizer
+    :return: normalized word error rate
+    """
+    return jiwer.wer(
+        references,
+        hypotheses,
+        reference_transform=transform,
+        hypothesis_transform=transform,
+    ) * 100.0

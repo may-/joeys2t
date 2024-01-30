@@ -120,6 +120,8 @@ def recurrent_greedy(
                 )
                 # out: batch x time=1 x vocab (logits)
 
+        out[:, :, bos_index] = float("-inf")
+
         if return_prob:
             out = F.log_softmax(out, dim=-1)
 
@@ -333,6 +335,7 @@ def transformer_greedy(
     yt = ddp_merge(yt, 0.0) if return_attn else None
 
     # remove BOS-symbol
+
     output = ys[:, 1:].detach().cpu().long()
     scores = yv[:, 1:].detach().cpu().float() if return_prob else None
     attention = yt[:, 1:, :].detach().cpu().float() if return_attn else None
@@ -850,9 +853,11 @@ def search(
     )
     with torch.autocast(**autocast):
         with torch.no_grad():
-            encoder_output, encoder_hidden, _, _ = model(
+            encoder_output, encoder_hidden, src_mask, _ = model(
                 return_type="encode", **vars(batch)
             )
+    src_mask = src_mask if batch.src_mask is None else batch.src_mask
+    assert src_mask is not None
 
     # if maximum output length is not globally specified, adapt to src len
     if max_output_length < 0:
@@ -873,7 +878,7 @@ def search(
     # decoding
     if beam_size < 2:  # greedy
         stacked_output, stacked_scores, stacked_attention_scores = greedy(
-            src_mask=batch.src_mask,
+            src_mask=src_mask,
             max_output_length=max_output_length,
             model=model,
             encoder_output=encoder_output,
@@ -887,7 +892,7 @@ def search(
             beam_size=beam_size,
             encoder_output=encoder_output,
             encoder_hidden=encoder_hidden,
-            src_mask=batch.src_mask,
+            src_mask=src_mask,
             max_output_length=max_output_length,
             alpha=beam_alpha,
             n_best=n_best,

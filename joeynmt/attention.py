@@ -9,6 +9,10 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from joeynmt.helpers_for_ddp import get_logger
+
+logger = get_logger(__name__)
+
 
 class AttentionMechanism(nn.Module):
     """

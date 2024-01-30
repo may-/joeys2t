@@ -52,6 +52,14 @@ joeynmt.config module
     :show-inheritance:
 
 
+joeynmt.data_augmentation module
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. automodule:: joeynmt.data_augmentation
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 joeynmt.data module
 ^^^^^^^^^^^^^^^^^^^
 .. automodule:: joeynmt.data
@@ -91,6 +99,15 @@ joeynmt.encoders module
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: joeynmt.encoders
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
+joeynmt.helpers_for_audio module
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: joeynmt.helpers_for_audio
     :members:
     :undoc-members:
     :show-inheritance:
