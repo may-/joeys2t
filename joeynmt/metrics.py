@@ -9,6 +9,7 @@ import jiwer
 from sacrebleu.metrics import BLEU, CHRF
 
 from joeynmt.helpers_for_ddp import get_logger
+from joeynmt.tokenizers import BasicTokenizer
 
 logger = get_logger(__name__)
 
@@ -102,7 +103,7 @@ def sequence_accuracy(hypotheses: List[str], references: List[str]) -> float:
 
     :param hypotheses: list of hypotheses (strings)
     :param references: list of references (strings)
-    :return:
+    :return: sequence accuracy (float)
     """
     assert len(hypotheses) == len(references)
     correct_sequences = sum([

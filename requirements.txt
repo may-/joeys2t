@@ -23,4 +23,4 @@ datasets
 packaging
 plotly
 pandas
-editdistance
+jiwer
