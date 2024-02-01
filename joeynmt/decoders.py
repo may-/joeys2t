@@ -8,7 +8,7 @@ import torch
 from torch import Tensor, nn
 
 from joeynmt.attention import BahdanauAttention, LuongAttention
-from joeynmt.builders import build_activation
+from joeynmt.builders import build_activation, build_layer_norm
 from joeynmt.config import ConfigurationError
 from joeynmt.encoders import Encoder
 from joeynmt.helpers import freeze_params, subsequent_mask
@@ -531,6 +531,8 @@ class TransformerDecoder(Decoder):
 
         self._hidden_size = hidden_size
         self._output_size = vocab_size
+        layer_norm = kwargs.get("layer_norm", "pre")
+        layer_norm_type = kwargs.get("layer_norm_type", "standard")
 
         # create num_layers decoder layers and put them in a list
         self.layers = nn.ModuleList([
@@ -540,15 +542,16 @@ class TransformerDecoder(Decoder):
                 num_heads=num_heads,
                 dropout=dropout,
                 alpha=kwargs.get("alpha", 1.0),
-                layer_norm=kwargs.get("layer_norm", "post"),
+                layer_norm=layer_norm,
+                layer_norm_type=layer_norm_type,
                 activation=kwargs.get("activation", "relu"),
             ) for _ in range(num_layers)
         ])
 
         self.pe = PositionalEncoding(hidden_size)
         self.layer_norm = (
-            nn.LayerNorm(hidden_size, eps=1e-6)
-            if kwargs.get("layer_norm", "post") == "pre" else None
+            build_layer_norm(layer_norm_type, hidden_size=hidden_size)
+            if layer_norm == "pre" else None
         )
 
         self.emb_dropout = nn.Dropout(p=emb_dropout)
@@ -630,6 +633,6 @@ class TransformerDecoder(Decoder):
             f"num_heads={self.layers[0].trg_trg_att.num_heads}, "
             f"alpha={self.layers[0].alpha}, "
             f'layer_norm="{self.layers[0]._layer_norm_position}", '
-            f'activation="{self.layers[0].feed_forward.pwff_layer[1]}", '
+            f'activation={self.layers[0].feed_forward.pwff_layer[1]}, '
             f'ctc_layer={self.ctc_output_layer is not None})'
         )

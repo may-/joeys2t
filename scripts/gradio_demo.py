@@ -66,6 +66,7 @@ def recognize(model_choice, speech):
     return predictions[0]
 
 
+# pylint: disable=unexpected-keyword-arg
 select = gr.Dropdown(model_names)
 mic = gr.Audio(source="microphone", type="numpy", label="Speak here...")
 demo = gr.Interface(

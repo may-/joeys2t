@@ -6,7 +6,7 @@ from functools import partial
 from typing import Callable, Dict, Generator, Optional
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import (
     ExponentialLR,
@@ -78,9 +78,9 @@ def build_layer_norm(layer_norm_type: str = "standard", **kwargs) -> Callable:
     """
     # pylint: disable=no-else-return
     assert "hidden_size" in kwargs
-    if activation == "standard":
+    if layer_norm_type == "standard":
         return nn.LayerNorm(kwargs["hidden_size"], eps=kwargs.get("eps", 1e-6))
-    elif activation == "rms":
+    elif layer_norm_type == "rms":
         return RMSNorm(kwargs["hidden_size"], eps=kwargs.get("eps", 1e-6))
     else:
         raise ConfigurationError(
@@ -512,6 +512,7 @@ class WarmupInverseSquareRootScheduler(BaseScheduler):
 
 
 class RMSNorm(nn.Module):
+
     def __init__(self, hidden_size, eps=1e-6):
         """
         RMS LayerNorm

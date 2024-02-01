@@ -8,13 +8,10 @@ import torch
 from torch import Tensor, nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from joeynmt.builders import build_layer_norm
 from joeynmt.helpers import freeze_params, lengths_to_padding_mask, pad
 from joeynmt.helpers_for_ddp import get_logger
-from joeynmt.transformer_layers import (
-    ConformerEncoderLayer,
-    PositionalEncoding,
-    TransformerEncoderLayer,
-)
+from joeynmt.transformer_layers import PositionalEncoding, TransformerEncoderLayer
 
 logger = get_logger(__name__)
 
@@ -204,6 +201,8 @@ class TransformerEncoder(Encoder):
         super().__init__()
 
         self._output_size = hidden_size
+        layer_norm = kwargs.get("layer_norm", "pre")
+        layer_norm_type = kwargs.get("layer_norm_type", "standard")
 
         # build all (num_layers) layers
         self.layers = nn.ModuleList([
@@ -213,7 +212,8 @@ class TransformerEncoder(Encoder):
                 num_heads=num_heads,
                 dropout=dropout,
                 alpha=kwargs.get("alpha", 1.0),
-                layer_norm=kwargs.get("layer_norm", "pre"),
+                layer_norm=layer_norm,
+                layer_norm_type=layer_norm_type,
                 activation=kwargs.get("activation", "relu"),
             ) for _ in range(num_layers)
         ])
@@ -222,8 +222,8 @@ class TransformerEncoder(Encoder):
         self.emb_dropout = nn.Dropout(p=emb_dropout)
 
         self.layer_norm = (
-            nn.LayerNorm(hidden_size, eps=1e-6)
-            if kwargs.get("layer_norm", "post") == "pre" else None
+            build_layer_norm(layer_norm_type, hidden_size=hidden_size)
+            if layer_norm == "pre" else None
         )
 
         if freeze:
@@ -304,7 +304,7 @@ class TransformerEncoder(Encoder):
             f"num_heads={self.layers[0].src_src_att.num_heads}, "
             f"alpha={self.layers[0].alpha}, "
             f'layer_norm="{self.layers[0]._layer_norm_position}", '
-            f'activation="{self.layers[0].feed_forward.pwff_layer[1]}", '
+            f'activation={self.layers[0].feed_forward.pwff_layer[1]}, '
             f'subsample={self.subsample})'
         )
 
@@ -372,75 +372,3 @@ class Conv1dSubsampler(nn.Module):
         assert x.size(1) == torch.max(out_seq_lens).item(), \
             (x.size(), in_seq_len, out_seq_len, out_seq_lens)
         return x, out_seq_lens
-
-
-class ConformerEncoder(TransformerEncoder):
-    """
-    Conformer Encoder
-    """
-
-    def __init__(
-        self,
-        hidden_size: int = 512,
-        ff_size: int = 2048,
-        num_layers: int = 8,
-        num_heads: int = 4,
-        dropout: float = 0.1,
-        emb_dropout: float = 0.1,
-        freeze: bool = False,
-        **kwargs,
-    ):
-        super().__init__()
-
-        self._output_size = hidden_size
-
-        # build all (num_layers) layers
-        self.layers = nn.ModuleList([
-            ConformerEncoderLayer(
-                size=hidden_size,
-                ff_size=ff_size,
-                num_heads=num_heads,
-                dropout=dropout,
-                alpha=kwargs.get("alpha", 1.0),
-                layer_norm=kwargs.get("layer_norm", "pre"),
-                depthwise_conv_kernel_size=kwargs.get("depthwise_conv_kernel_size", 31)
-            ) for _ in range(num_layers)
-        ])
-
-        self.pe = PositionalEncoding(hidden_size)
-        self.emb_dropout = nn.Dropout(p=emb_dropout)
-        self.linear = nn.Linear(hidden_size, hidden_size)
-
-        if freeze:
-            freeze_params(self)
-
-        # conv1d subsampling for audio inputs
-        self.subsampler = Conv1dSubsampler(
-            kwargs["in_channels"], kwargs["conv_channels"], hidden_size,
-            kwargs.get("conv_kernel_sizes", [3, 3])
-        )
-        self.pad_index = kwargs.get("pad_index", 1)
-        assert self.pad_index is not None
-
-    def forward(
-        self,
-        src_embed: Tensor,
-        src_length: Tensor,
-        mask: Tensor = None,
-        **kwargs,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
-        x, src_length = self.subsampler(src_embed, src_length)  # always subsample
-        mask = lengths_to_padding_mask(src_length).unsqueeze(1)  # recompute src mask
-
-        x = self.pe(x)  # add position encoding to spectrogram features
-        x = self.linear(x)
-        x = self.emb_dropout(x)
-
-        for layer in self.layers:
-            x = layer(x, mask)  # T x B x C
-
-        if kwargs.get('repad', False) and "src_max_len" in kwargs:
-            x, mask = self._repad(x, mask, kwargs["src_max_len"])
-        assert src_length.size() == (x.size(0), ), (src_length.size(), x.size())
-        assert mask.size() == (x.size(0), 1, x.size(1)), (mask.size(), x.size())
-        return x, None, mask

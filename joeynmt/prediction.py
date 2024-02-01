@@ -304,7 +304,7 @@ def predict(
         )
         # TODO: `valid_seq_scores` should have the same seq length as `decoded_valid`
         #     -> needed to be cut-off at eos/sep synchronously
-    
+
         if args.return_prob == "ref":  # no evaluation needed
             logger.info(
                 "Evaluation result (scoring) %s, duration: %.4f[sec]",

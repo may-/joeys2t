@@ -82,7 +82,7 @@ def ddp_merge(data: Tensor, pad_index: int = 1) -> Tensor:
             squeeze_flag = True
             data = data.unsqueeze(1)
             dim = len(data.size())
-        
+
         if dim == 2:
             batch_size, seq_length = data.size()
         elif dim == 3:

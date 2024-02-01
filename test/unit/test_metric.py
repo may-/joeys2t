@@ -1,6 +1,6 @@
 import unittest
 
-from joeynmt.metrics import bleu, chrf, get_transform, token_accuracy, wer
+from joeynmt.metrics import bleu, chrf, token_accuracy, wer
 from joeynmt.tokenizers import EvaluationTokenizer
 
 
@@ -57,9 +57,9 @@ class TestMetrics(unittest.TestCase):
 
         hyp = ["This is a test."]
         ref = ["this is a Tezt!"]
-        score = wer(hyp, ref, transform=get_transform(tok))
+        score = wer(hyp, ref, tokenizer=tok)
         self.assertEqual(score, 25.0)  # 1/4 = 0.25
 
         tok.no_punc = False
-        score = wer(hyp, ref, transform=get_transform(tok))
+        score = wer(hyp, ref, tokenizer=tok)
         self.assertEqual(score, 40.0)  # 2/5 = 0.4

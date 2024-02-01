@@ -392,14 +392,14 @@ class TestPrompt(unittest.TestCase):
                 '<de>', '▁', 'J', 'a', '▁', ',', '▁', 'g', 'ut', 'en', '▁T', 'a', 'g',
                 '▁', '.', '<sep>', '▁', 'J', 'a', '▁', ',', '▁', 'al', 's', 'o', '▁',
                 ',', '▁was', '▁so', 'll', '▁B', 'i', 'o', 'h', 'a', 'c', 'k', 'ing',
-                '▁', 'se', 'in', '▁', '?'
+                '▁', 'se', 'in', '▁', '?',
             ],
             "trg": [
                 '<en>', '▁', 'Y', 'es', '▁', ',', '▁h', 'e', 'll', 'o', '▁', '.',
                 '<sep>', '▁', 'Y', 'es', '▁', ',', '▁so', '▁', ',', '▁w', 'h', 'at',
-                '▁is', '▁b', 'i', 'o', 'h', 'a', 'c', 'k', 'ing', '▁', '?'
+                '▁is', '▁b', 'i', 'o', 'h', 'a', 'c', 'k', 'ing', '▁', '?',
             ],
-        }
+        }  # yapf: disable
 
         dev_src, dev_trg = dev_data.src, dev_data.trg
         _, dev_src_2, dev_trg_2 = dev_data[2]

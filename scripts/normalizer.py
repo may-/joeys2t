@@ -256,8 +256,8 @@ class EnglishNumberNormalizer:
             "cents": "¢",
         }
         self.prefixes = set(
-            list(self.preceding_prefixers.values()) +
-            list(self.following_prefixers.values())
+            list(self.preceding_prefixers.values())
+            + list(self.following_prefixers.values())
         )
         self.suffixers = {
             "per": {"cent": "%"},
